@@ -1,0 +1,65 @@
+
+// HEADLEX
+
+global
+{
+// NLEX2 statics
+ Ch:                #450
+  NLPending:         #461
+  ReadAhead:         #442
+  ExtraSymb:         #446
+  LastItem:          #463
+  SWcontrol:         #466
+
+// CAE0 statics
+
+  GetV:              #434
+  GetP:              #435
+  LineV:             #436
+  LineP:             #437
+  B:                 #443
+  WUPFLG:            #444
+  Symb:              #431       // Scalar (in CAE0.B) into which
+                                //-- Nextsymb puts its output.
+  V:                 #432       // Vector (in CAE0.B) into which
+                                //-- Nextsymb puts some data.
+  Chkind:            #451
+
+//NLEX1 routines
+  Nextsymb:          #430
+  LinePtr:           #460
+  Rch:               #452
+  OpenSource:        #465
+  DoGet:             #441
+  DoControl:         #467
+  DictionaryEntry:   #470
+
+
+//CAE0 routines
+  CAEreport:         #433
+ }
+
+external
+{ JSETUP
+    JRch
+    JRFPTR
+    JNDRD
+ }
+
+manifest                        // Sizes of various tables.
+{ LineT  :=        120          // Input line for Rch and CAEreport.
+  Vmax  :=         512          // Maximum length string, name, number,
+                                //-- etc.
+  GetT  :=         10           // Maximum nesting depth of "get"
+                                //-- files.
+  BRACKETLABEL  := 20           // Length of the label on a labelled
+                                //-- section bracket.
+  DictOffset  :=   #260000      // start of the hash coded dictionary.
+                                // initially, zeroth word is a relative
+                                //-- ptr to
+                                // next free location. AE-tree grows
+                                //-- down from
+                                // here.
+
+ }
+

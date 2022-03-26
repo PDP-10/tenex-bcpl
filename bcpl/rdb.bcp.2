@@ -1,0 +1,117 @@
+
+
+// RDB.BCP   Read ll data base test pgm. Rovner 3/15/73
+
+
+get "<BCPL>HEAD"
+get "<BCPL>NLHEAD"
+get "<BCPL>UTILHEAD"
+
+static{ DBGSW_false}
+
+manifest{ LOCALSOCKET_#122}
+
+let Start() be
+ {    InitNetLibrary()
+   OUTPUT_CreateOutput(0)	//primary output stream
+   let ttyin_FindInput(0)	//tty input stream
+
+   {
+     WriteS("debug? Y or N:")
+     let tt_BIN(ttyin)
+     WriteS("*n")
+     if tt=$Y \ tt=$y do { DBGSW_true ; break}
+
+     if tt=$N \ tt=$n do break
+   } repeat
+   let callvec_vec 20
+   let tx2out,tx2in_0,0
+   { if CreateNetDialogue(-1,,"LL-TX-2",lv tx2out,lv tx2in,#12,#25317501)=0 break
+     WriteS("Still trying to connect to Lincoln*n")
+     Wait(8000)	//8 second Wait
+   } repeat
+
+   { let v_table 0,0,0,1,0,0,0,0,0,0,#25,0,0,0,1
+      for i_1 to 15 do Writech(tx2out,v|(i-1))
+    }
+
+   INPUT_tx2in	//primary input stream
+
+   {      let samplefile_CreateOutput(1,9)
+     let spoolfile_CreateOutput("LLAD.SPOOL;T",12)
+
+     WriteS("Binary connection to TX-2 established...")
+
+     let limcnt_0
+     let n_((PBIN() lshift 8)\PBIN()),,((PBIN() lshift 8)\PBIN())
+     if DBGSW do
+      { WriteS("# samples=")
+        WriteN(n)
+        WriteS("*n")
+      }
+     let max_0
+     for i_1 to n do
+      { let x_(PBIN() lshift 8)\PBIN()
+        callvec|1_INPUT
+        JSYS(#24,callvec)	//GTSTS ; chek for a read error
+        if ((lh callvec|2) & #400) ne 0 do { Help("Network Read Error Detected*n")} repeat	//read error
+        let s1_ADsignext(LDB(POINT(12,lv x,31)))
+        if (s1=#3777)\(s1=#-4000) do limcnt_limcnt+1
+        max_maxmag(s1,max)
+        BOUT(spoolfile,s1)
+      }
+     WriteN(n)
+     WriteS("*ssamples received*n")
+     WriteS("max=")
+     WriteN(max)
+     WriteS("*t(out of 2048)*n")
+
+     if limcnt>0 do
+      { WriteN(limcnt)
+        WriteS("*ssamples at A/D upper limit*n")
+      }
+     EndWrite(spoolfile)
+     spoolfile_FindInput("LLAD.SPOOL;T",12)
+     for i_1 to n do BOUT(samplefile,((ADsignext(BIN(spoolfile))*#776)/max+1)rshift 1)
+
+     EndWrite(samplefile)
+     EndWrite(spoolfile)
+   } 
+   EndNetDialogue(tx2out,tx2in)
+ }
+
+and maxmag(x,y)_(magn(x)>magn(y)) => magn(x),magn(y)
+
+and magn(x)_(x>0) => x,-x
+
+
+
+
+and LLPBIN() _ valof
+ { let ch_PBIN()
+   if DBGSW do Writech(OUTPUT,ch)
+   resultis ch
+ }
+
+
+and SendRFC(nets) be
+ { let v_vec 20
+   v|1_nets
+   v|2_#20
+   JSYS(#77,v)	//MTOPR
+ }
+
+
+and ADsignext(val)_ (val neqv #4000)-#4000
+
+and LLWriteS(outs,strng) be
+ { WriteS(outs,strng)
+   if DBGSW do WriteS(strng)
+ }
+
+
+and LLBIN(instr)_valof
+ { while IsCharInput(INPUT) do LLPBIN()
+   resultis BIN(instr)
+ }
+

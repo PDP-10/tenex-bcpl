@@ -1,0 +1,454 @@
+
+
+:: reserve offset
+:: reserve numbargs
+get "<11BCPL>HEAD.BCP"
+get "<11BCPL>HEADIO.BCP"
+
+structure
+{   Message
+    {   Link word
+	Length word
+	Leader
+	{   Type byte
+	    Host byte
+	    Link byte
+	    SubType byte
+	}
+	Header
+	{   CHKSUMBytes^1 byte overlay
+	    Flg1 byte
+	    Flg2
+	    {	ACK bitb
+		HUH bitb
+		AGN bitb
+		FST bitb
+		fill byte
+	    }
+	    Sequence word
+	}
+	String
+	{   Count byte
+	    Ch byte
+	}
+    }
+
+    Queue
+    {	Head word
+	Tail word
+	Count word
+    }
+
+}
+
+
+manifest
+{   PS := rv #177776
+    NIBufs := 30
+    NOBufs := 10
+    BufSize := 8096/8 + 4
+    QSize := (size Queue)/8
+    NSQH := 7
+    MaxSQH := 2*(NSQH-1)
+    BBN := 5
+    TENEX := -#100
+    TENEXB := -#200
+    TENEXA := -#300
+    PrinterLink := #375
+    TimeOut := 15
+
+
+
+//  Flags in Flg2
+
+    ACK := 1			// Acknowledge
+    HUH := 2			// Send FST with next message
+    AGN := 4			// Begin re-transmitting
+    FST := #10			// First message (i.e. take sequence #)
+
+// IMP interface registers
+
+    SPI := rv #164000
+    EPI := rv #164002
+    IS1 := rv #164004
+    IS2 := rv #164006
+    SPO := rv #164010
+    EPO := rv #164012
+    OS1 := rv #164014
+    OS2 := rv #164016
+    LKS := rv #177546
+    PKS := rv #172540
+    PKB := rv #172542
+    PKC := rv #172544
+}
+
+
+
+static
+{   Host: BBN-TENEXA
+    InputBuffer: 0
+    OutputBuffer: 0
+    InputQueue: vec QSize - 1
+    OutputQueue: vec QSize - 1
+    IFreeQueue: vec QSize - 1
+    OFreeQueue: vec QSize - 1
+    LinkTable: table -1 repname NSQH
+    SpecialQueue: table (vec QSize - 1) repname NSQH
+    IBuffers: table (vec BufSize) repname NIBufs
+    OBuffers: table (vec BufSize) repname NOBufs
+    NOPMsg: table 0,,4 , 0
+    Printer: 0
+    Teletype: 0
+    Input: 0
+    SQH: -1
+    ExpectFirst: true
+    TimeUp: false
+    NOPCount: nil
+    IgnoreCount: nil
+    Sequence: -1
+    ReXMT: false
+}
+
+
+
+let Start () be
+{   PS := PS \ #340
+    IMPOff ()
+    RSTIO ()
+    PS := PS & ~#340
+    Printer := CreateOutput ("LPT")
+    Teletype := CreateOutput ("TTY")
+    InitQueue (InputQueue)
+    InitQueue (IFreeQueue)
+    InitQueue (OFreeQueue)
+    InitQueue (OutputQueue)
+    for i := 0 to MaxSQH by 2 do
+	InitQueue (SpecialQueue|i)
+    for i := 0 to 2*(NIBufs-1) by 2 do
+	Insert (IFreeQueue, IBuffers|i)
+    for i := 0 to 2*(NOBufs-1) by 2 do
+	Insert (OFreeQueue, OBuffers|i)
+    InputBuffer := 0
+    OutputBuffer := 0
+    ExpectFirst := true
+    TimeUp := false
+    Sequence := -1
+    WriteS (Teletype, "*n*lBBN NETWORK LPT SPOOLER IN OPERATION.*n*l")
+    RELSQ (-1)	// Release all Special Queue Handles
+    SQH := ASNSQ (PrinterLink)
+    StartIMP ()
+    StartInput ()
+    Go ()
+}
+
+and Go () be
+{   Input := GetMessage ()
+    if ExpectFirst & ~Input>>Message.Header.Flg2.FST
+    then
+    {	Send (HUH)
+	STime (TimeOut)
+	{   Free (Input)
+	    Input := GetMessage ()
+	}
+	repeatuntil TimeUp \ Input>>Message.Header.Flg2.FST
+	if TimeUp
+	then loop
+	break
+    }
+    repeat
+    let Flgs := ACK
+    if Input>>Message.Header.Flg2.FST
+    then
+    {	ExpectFirst := false
+	Sequence := Input>>Message.Header.Sequence
+    }
+    test Sequence = Input>>Message.Header.Sequence
+    ifso
+    {	WriteS (Printer, lv Input>>Message.String)
+	Sequence := Sequence + Input>>Message.String.Count
+    }
+    ifnot if Sequence < Input>>Message.Header.Sequence
+          then Flgs := Flgs \ AGN
+    Send (Flgs)
+    Free (Input)
+}
+repeat
+
+
+
+
+and GetMessage () := valof
+{   let Inbuf := nil
+    {	Inbuf := RCVIM (SQH)
+	if (Inbuf>>Message.Leader.Type = 0) &
+	       (Inbuf>>Message.Leader.Host = Host) 
+	then
+	{   let ChkSum := 0
+	    and Count := Inbuf>>Message.String.Count
+	    for i := 1 to Count + ((size Message.Header)/8) + 2 do
+		ChkSum := ChkSum + rh Inbuf>>Message.Header.CHKSUMBytes^i
+	    if rh ChkSum = 0
+	    then resultis Inbuf
+	}
+	Free (Inbuf)
+    }
+    repeat
+}
+
+and Send (Flags) be
+{   let Buffer := nil
+    Buffer := Remove (OFreeQueue)
+    repeatuntil Buffer ne 0
+    Buffer>>Message.Leader.Type := 0
+    Buffer>>Message.Leader.Host := Host
+    Buffer>>Message.Leader.Link := PrinterLink
+    Buffer>>Message.Leader.SubType := 0
+    Buffer>>Message.Header.Flg1 := 0
+    Buffer>>Message.Header.Flg2 := Flags
+    Buffer>>Message.Header.Sequence := Sequence
+    Buffer>>Message.String.Count := 0
+    Buffer>>Message.Length := 12
+    SNDIM (SQH, Buffer)
+}
+
+
+
+
+
+and ASNSQ (Link) := valof
+{   let SQH := -1
+    if valof
+    {   for i := 0 to MaxSQH by 2 do
+	{   if LinkTable|i = Link
+	    then resultis false
+	    if LinkTable|i < 0
+	    then SQH := i
+	}
+	if SQH < 0
+	then resultis false
+	resultis true
+    }
+    then
+    {   LinkTable|SQH := Link
+	InitQueue (SpecialQueue|SQH)
+    }
+    resultis SQH
+}
+
+and RELSQ (SQH) be
+{   let First := SQH
+    and Last := SQH
+    and Buffer := nil
+    if SQH < 0
+    then
+    {   First := 0
+	Last := MaxSQH
+    }
+    for i := First to Last by 2 do
+    {   if LinkTable|i < 0
+	then loop
+	{   Buffer := Remove (SpecialQueue|i)
+	    if Buffer = 0
+	    then break
+	    Insert (IFreeQueue, Buffer)
+	}
+	repeat
+	LinkTable|i := -1
+    }
+}
+
+
+
+and RCVIM (SQH) := valof
+{   CheckSQH (SQH)
+    let Buffer := nil
+    {	Dispatch ()
+	Buffer := Remove (SpecialQueue|SQH)
+    }
+    repeatuntil Buffer ne 0
+    resultis Buffer
+}
+
+and SNDIM (SQH, Buffer) be
+{   CheckSQH (SQH)
+    test LinkTable|SQH ne Buffer>>Message.Leader.Link
+    ifso
+    {	WriteS (Teletype, "*nInvalid message for special queue.*n")
+	Insert (OFreeQueue, Buffer)
+    }
+    ifnot
+    {   Insert (OutputQueue, Buffer)
+	OS1 := OS1 \ #100	// Enable output interrupt
+    }
+}
+
+
+and CheckSQH (SQH) be
+{   unless (0 le SQH le MaxSQH) &	// SQH within legal range
+           ( (SQH & 1) = 0 ) &	// and SQH is even
+           (LinkTable|SQH ge 0)	// and SQH is assigned
+
+    then
+    {   WriteS (Teletype, "*nUnassigned Queue handle.*n")
+	finish
+    }
+}
+
+
+
+
+and Dispatch () be
+{   let Buffer := nil
+    {   Buffer := Remove (InputQueue)
+	if Buffer = 0
+	then return
+	for i := 0 to MaxSQH by 2 do
+	    if LinkTable|i = Buffer>>Message.Leader.Link
+	    then
+	    {   Insert (SpecialQueue|i, Buffer)
+		Buffer := 0
+		break
+	    }
+	if Buffer ne 0
+	then Free (Buffer)
+    }
+    repeat
+}
+
+
+and Free (Buffer) be
+{   Insert (IFreeQueue, Buffer)
+    if (IS1 & #100) = 0		// Input shut down?
+    then StartInput ()
+}
+
+
+
+
+and IMPIPI () be
+{   if IS1 < 0			// IMP ERROR?
+    then StartIMP ()
+    let Queue := InputQueue
+    test IgnoreCount > 0
+    ifso
+    {   IgnoreCount := IgnoreCount - 1
+	Queue := IFreeQueue
+    }
+    ifnot InputBuffer>>Message.Length := SPI - (lv InputBuffer>>Message.Leader.Type)
+    Insert (Queue, InputBuffer)
+    StartInput ()
+}
+
+and StartInput () be
+{   let SavePS := PS
+    PS := PS \ #340
+    InputBuffer := Remove (IFreeQueue)
+    test InputBuffer = 0
+    ifso IS1 := IS1 & ~#100	// Disable input interrupt
+    ifnot
+    {   SPI := lv InputBuffer>>Message.Leader.Type
+	EPI := lv InputBuffer>>Message.Leader.Type + BufSize
+	IS1 := IS1 \ #100	// Enable input interrupt
+    }
+    PS := SavePS
+}
+
+
+
+and IMPOPI () be
+{   test NOPCount > 0
+    ifso
+    {	SPO := NOPMsg
+	EPO := NOPMsg + 4
+	NOPCount := NOPCount - 1
+    }
+    ifnot
+    {	test ReXMT
+	ifso ReXMT := false
+	ifnot
+	{   if OutputBuffer ne 0
+	    then Insert (OFreeQueue, OutputBuffer)
+	    OutputBuffer := Remove (OutputQueue)
+	}
+	test OutputBuffer = 0
+	ifso OS1 := OS1 & ~#100	// Disable output interrupt
+	ifnot
+	{   SPO := lv OutputBuffer>>Message.Leader.Type
+	    EPO := lv OutputBuffer>>Message.Leader.Type + OutputBuffer>>Message.Length
+	}
+    }
+}
+
+
+and StartIMP () be
+{   LKS := LKS & ~#100		// Disable clock interrupt
+    lh OS2 := lh OS2 + 1	// Reset interface
+    NOPCount := 4
+    IgnoreCount := 2
+    while rh LKS ge 0 do {}	// wait for clock tick to get synched
+    OS2 := OS2 + 1		// Set HOST READY
+    while rh LKS ge 0 do {}	// Wait one tick for READY to settle
+    LKS := LKS \ #100		// Enable clock interrupt
+    SPO := NOPMsg
+    EPO := NOPMsg + 4
+    ReXMT := true
+    OS1 := OS1 \ #100		// Enable output interrupt
+}
+
+and IMPOff () be
+{   IS1 := IS1 & ~#100		// Disable input interrupt
+    OS1 := OS1 & ~#100		// Disable output interrupt
+    lh OS2 := lh OS2 + 1	// Reset interface
+}
+
+
+
+
+
+and STime (Time) be
+{   TimeUp := false
+    PKC := Time * 10000
+    PKS := #103
+}
+
+and PCLKPI () be
+{   PKS := 0
+    TimeUp := true
+}
+
+and CLKPI () be
+    OS2 := OS2 + 1		// Keep the f**king ready line up
+
+
+
+and InitQueue (Q) be
+{   Q>>Queue.Head := 0
+    Q>>Queue.Tail := lv Q>>Queue.Head
+    Q>>Queue.Count := 0
+}
+
+and Insert (Q,lvItem) be
+{   let SavePS := PS
+    PS := PS \ #340
+    rv lvItem := 0
+    rv Q>>Queue.Tail := lvItem
+    Q>>Queue.Tail := lvItem
+    Q>>Queue.Count := Q>>Queue.Count + 1
+    PS := SavePS
+}
+
+and Remove (Q) := valof
+{   let SavePS := PS
+    PS := PS \ #340
+    let lvItem := Q>>Queue.Head
+    if lvItem ne 0
+    then
+    {	Q>>Queue.Head := rv lvItem
+	if Q>>Queue.Head = 0
+	then Q>>Queue.Tail := lv Q>>Queue.Head
+	Q>>Queue.Count := Q>>Queue.Count - 1
+    }
+    PS := SavePS
+    resultis lvItem
+}
+

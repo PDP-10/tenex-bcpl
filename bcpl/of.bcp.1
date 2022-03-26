@@ -1,0 +1,346 @@
+
+// <JMILLER>OF.BCP;4    20-AUG-74 14:55:10    EDIT BY JMILLER
+
+// Created by Jim Miller for use as a BCPL library routine
+
+get "<bcpl>head"
+get "<bcpl>utilhead"
+get "<bcpl>jshead"
+get "<bcpl>openfilehead"
+
+structure
+{ OFAC2
+  { ByteSize bit 6
+    Rest bit 30
+  }
+  String
+  { N bit 9
+    C^511 bit 9
+  }
+}
+
+let OpenF(JFN, ByteSize, Bits) := valof
+{ switchon NumbArgs() into
+  { case 1:     ByteSize := 7
+    case 2:     Bits := ofRead+ofWrite+ofExecute
+    case 3:     endcase
+
+    default:    resultis ofBadArgs,,0
+  }
+  let AC := vec 10
+  unless (JFN=-1)\(0 < JFN < #200) resultis ofBadArgs,,1
+  unless 0 < ByteSize < 37 resultis ofBadArgs,,2
+  AC|1 := JFN
+  (AC|2)<<OFAC2.ByteSize := ByteSize
+  (AC|2)<<OFAC2.Rest := Bits
+  test JSYS(jsOPENF, AC)=1
+  ifso resultis ofOPENFerror,,(AC|1)
+  ifnot resultis 0
+}
+
+and GetJFN(Input, Bits, Default, MainStr, JFN) := valof
+{ switchon NumbArgs() into
+  { case 0:  Input := 1        // Read from TTY
+    case 1:  Bits := #20000,,0  // Require confirmation
+    case 2:  Default := -1      // No defaults
+    case 3:  MainStr := 0       // No main input string
+    case 4:  JFN := -1          // No special JFN
+             if (Bits&ofAssignJFN) ne 0 resultis ofBadArgs,,2
+             endcase
+
+    case 5:  Bits := Bits\ofAssignJFN
+             endcase
+
+    default: resultis ofBadArgs,,0
+  }
+  let AC := vec 10
+  let T := vec 100
+  let Block := list (lhz Bits),,0,
+                    0 repname 8
+  let Strings := vec 150
+  unless (Default le 0)\ (Parce(Default, Block, Strings))
+  do resultis ofBadArgs,,3
+  Block|8 := JFN
+  switchon Input into
+  { case 0:  if (Bits&~ofOutput) ne 0 resultis ofBadArgs,,1
+             resultis (Bits&~ofOutput) ne 0 => #101, #100
+
+    case 1:
+             { let Str :=
+                 (Bits&ofOutput)=0 => "*nInput  File: ",
+                 "*nOutput File: "
+               WriteS(#101, Str)
+             }
+    case 2: unless Block|1=0 resultis ofBadArgs,,4
+             Block|1 := #100,,#101
+             endcase
+
+    default: test Input < 0
+             ifso
+             { test (Bits&ofOutput)=0
+               ifso resultis FindInput(Input)
+               ifnot resultis CreateOutput(Input)
+             }
+             ifnot
+             { unless MainStr=0 resultis ofBadArgs,,4
+               blt(Input, T, T+(Input>>String.N/4))
+               T>>String.C^((Input>>String.N)+1) := 0
+               MainStr := POINT(9, T, 8)
+               Block|1 := #377777,,#101
+             }
+             endcase
+  }
+  AC|1 := Block
+  AC|2 := MainStr
+  test JSYS(jsGTJFN, AC)=2
+  ifso resultis AC|1
+  ifnot resultis ofGTJFNerror,,(AC|1)
+}
+
+
+and Parce(Default, Block, St) := valof
+{ let Num, MustBeNum := 0, false
+  let Prot, Acct, Ver, LT, GT, DOT, SEMI, COLON := false repname 8
+  let Neg, Part, Count := nil, vec 20, 0
+  for i := 1 to Default>>String.N do
+  { let Chr := Default>>String.C^i
+    switchon Chr into
+    { case $::
+                { if (COLON\SEMI\DOT\GT\LT) resultis false
+                  COLON := true
+                  if Count=0 resultis false
+                  Block|2 := PCopy(Part, lv St, Count)
+                  Count := 0
+                  loop
+                }
+      case $<:
+                { unless ~LT & ~GT & ~SEMI & ~DOT &
+                         (Count=0) resultis false
+                  LT := true
+                  loop
+                }
+      case $>:
+                { unless (LT & ~GT & ~DOT & ~SEMI) resultis false
+                  LT := false
+                  GT := true
+                  if (Count=0)&~COLON resultis false
+                  if Count=0 loop
+                  Block|3 := PCopy(Part, lv St, Count)
+                  Count := 0
+                  loop
+                }
+      case $.:
+                { unless ~DOT & ~SEMI & ~LT resultis false
+                  DOT := true
+                  if Count=0 loop
+                  Block|4 := PCopy(Part, lv St, Count)
+                  Count := 0
+                  loop
+                }
+                
+      case $;:
+                { if LT resultis false
+                  if Neg do Num := -Num
+                  unless Count=0 do
+                  { unless DOT\Prot\Acct\Ver resultis false
+                    test DOT
+                    ifso Block|5 := PCopy(Part, lv St, Count)
+                    ifnot
+                    { test Prot
+                      ifso
+                      { unless Block|6=0 resultis false
+                        if Neg resultis false
+                        Block|6 := #500000,,Num
+                        Prot := false
+                      }
+                      ifnot
+                      { test Acct
+                        ifso
+                        { unless Block|7=0 resultis false
+                          test MustBeNum
+                          ifso
+                          { if Neg resultis false
+                            Block|7 := #500000,,Num
+                          }
+                          ifnot Block|7 := PCopy(Part, lv St, Count)
+                          Acct := false
+                        }
+                        ifnot
+                        { unless rh Block|0=0 resultis false
+                          rh Block|0 := Num
+                          Ver := false
+                        }
+                      }
+                    }
+                  }
+                  
+                  Count := 0
+                  Neg := false
+                  Num := 0
+                  MustBeNum := true
+                  i := i+1
+                  SEMI := true
+                  let NCh := Default>>String.C^i
+                  switchon NCh&#137 into
+                  { case $P:
+                      { Prot := true
+                        loop
+                      }
+                    case $A:
+                      { Acct := true
+                        let N := Default>>String.C^(i+1)
+                        unless $0 le N le $9 do MustBeNum := false
+                        loop
+                      }
+                    case $S:
+                      { if ((Block|0)&ofScratch) ne 0 resultis false
+                        (Block|0) := (Block|0)+ofScratch
+                        MustBeNum := false
+                        loop
+                      }
+                    case $T:
+                      { if ((Block|0)&ofTemporary) ne 0 resultis false
+                        (Block|0) := (Block|0)+ofTemporary
+                        MustBeNum := false
+                        loop
+                      }
+                    default:
+                      unless (NCh=$-)\($0 le NCh le $9) resultis false
+                      Ver := true
+                      i := i-1
+                      loop
+                  }
+                }
+                
+      case $^V: if i=Default>>String.N resultis false
+                Count := Count+1
+                Part>>String.C^Count := $^V
+                i := i+1
+                Chr := Default>>String.C^i
+                Count := Count+1
+                goto Def
+
+      default:
+                { Count := Count+1
+                  if MustBeNum do
+                  { if Chr=$- do
+                    { if Neg resultis false
+                      unless Num=0 resultis false
+                      Neg := true
+                      loop
+                    }
+                    let Radix := Prot => 8, 10
+                    unless $0 le Chr < ($0+Radix) resultis false
+                    Num := Num*Radix+Chr-$0
+                    loop
+                  }
+                  if $a le Chr le $z do Chr := Chr-$a+$A
+                Def:
+                  Part>>String.C^Count := Chr
+                  Part>>String.N := Count
+                  loop
+                }
+    }
+  }
+  
+  if Count=0 resultis true
+  if Acct do
+  { unless Block|7=0 resultis false
+    test MustBeNum
+    ifso
+    { if Neg resultis false
+      Block|7 := #500000,,Num
+    }
+    ifnot Block|7 := PCopy(Part, lv St, Count)
+    resultis true
+  }
+  if Prot do
+  { if Neg resultis false
+    unless Block|6=0 resultis false
+    Block|6 := #500000,,Num
+    resultis true
+  }
+  if Ver do
+  { unless (rh Block|0)=0 resultis false
+    rh Block|0 := Neg => -Num, Num
+    resultis true
+  }
+  if DOT do
+  { Block|5 := PCopy(Part, lv St, Count)
+    resultis true
+  }
+  if GT do
+  { unless LT resultis false
+    Block|4 := PCopy(Part, lv St, Count)
+    resultis true
+  }
+  if COLON\LT resultis false
+  Block|4 := PCopy(Part, lv St, Count)
+  resultis true
+}
+
+and PCopy(IntStr, lvExtStr, Count) := valof
+{ let Ext := rv lvExtStr
+  blt(IntStr, Ext, Ext+(Count+1)/4)
+  Ext>>String.C^(Count+1) := 0
+  rv lvExtStr := Ext+(Count+1)/4+1
+  resultis POINT(9, Ext, 8)
+}
+
+and OpenFile(Mode, Source, Size, Default, Bits, Initial, JFN) := valof
+{ manifest
+  { legalbits  :=  ofNewFile\ofOldFile\ofMessage\ofConfirm\ofTemporary\
+    ofRetype\ofNoAccess\ofIgnoreDeleted\ofOutput\ofAssignJFN
+    legalmodes  := (#7777,,0)+
+                     (ofRead\ofWrite\ofExecute\ofAppend\ofPerPageTable\
+                      ofThawed\ofWait\ofNoWait\ofNoChangeDate)
+  }
+
+  switchon NumbArgs() into
+  { case 1:          Source := 1
+    case 2:          Size := 7
+    case 3:          Default := -1
+    case 4:          Bits := -1
+    case 5:          Initial := -1
+    case 6:          JFN := 0
+    case 7:          endcase
+
+    default:         resultis ofBadArgs,,0
+  }
+  if (Size<1)\(Size>36) resultis ofBadArgs,,3
+  if Source=0 do
+  { unless Size=7 resultis ofBadArgs,,3
+    switchon Mode into
+    { case ofRead:     resultis #100
+
+      case ofAppend:
+      case ofWrite:    resultis #101
+
+      default:         resultis ofBadArgs,,1
+    }
+  }
+  if (Mode&legalmodes) ne Mode resultis ofBadArgs,,1
+  test Bits=-1
+  ifso
+  { test (Mode&(ofAppend\ofExecute\ofRead)) ne 0
+    ifso Bits := ofOldFile+ofConfirm
+    ifnot Bits := ofNewFile+ofOutput+ofConfirm
+  }
+  ifnot if (Bits&legalbits) ne Bits resultis ofBadArgs,,5
+  let OJFN := selecton NumbArgs() into
+  { case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 5:   GetJFN(Source, Bits, Default)
+    case 6:   GetJFN(Source, Bits, Default, Initial)
+    case 7:   GetJFN(Source, Bits, Default, Initial, JFN)
+  }
+  if ( (lhz OJFN)&#20 ) ne 0 do
+  { if JFN=(ofBadArgs,,3) resultis ofBadArgs,,4
+    resultis ofBadGetJFN,,rhz OJFN
+  }
+  let T := OpenF(rhz OJFN, Size, Mode)
+  if T < 0 resultis ofBadOpenF,,rhz T
+  resultis rhz OJFN
+}

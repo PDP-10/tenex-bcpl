@@ -1,0 +1,678 @@
+
+// <XBCPL>NMAIN1.BCP;21    24-MAY-73 09:40:39 EDIT BY ROVNER
+// fix for ccl input file end: zero byte => ^z
+// <XBCPL>NMAIN1.BCP;19    18-MAY-73 01:02:37 EDIT BY ROVNER
+// changes for ccl; /s flips meaning, symbol file is put out as
+// the default case
+
+// The BCPL Compiler -- Main Program.
+
+// Start ........ The Main Program
+// Abort
+// Stopcl
+// RSclck
+// FixName
+// getargs
+// isdot
+// DictRetFree
+
+get "<bcpl>utilhead"
+get "<bcpl>dicthead"
+get "<bcpl>head"
+get "headbcpl"
+get "headmain"
+get "<XBCPL>headlex"
+
+structure                       // Option switches local to this file
+                                //-- only.
+{ SWlocal
+  { byte 2                      // Skip over global switches.
+    Tree bitb                   // Produce listing of the AE-tree, as
+                                //-- produced by CAE.
+    Tree2 bitb                  // Produce listing of the optimized
+                                //-- AE-tree after Trans.
+    Nocg bitb                   // Terminate compilation after Trans,
+                                //-- before Code Generation.
+    File bitb                   // Compiler output to the file
+                                //-- ".name.m".
+   }
+ }
+
+external
+{ lslide                        // routine to overlay loader for CCL
+                                //-- LOADER! cmd
+ }
+
+manifest
+{ Empty _ 0                     // one of the values returned by Kind
+                                //-- in LEX.
+
+// used here to initialize Chkind
+ }
+
+static
+{ TreeStream : 0                // if tree output is desired, the stream
+  cclbool:     false            // set true for subsequent times thru,
+                                //-- if ccl
+  cmdinstream: 0                // primary input  (command) stream
+
+// for it goes here
+
+  Greeting :   "***s"           // Prompt string
+  StackBase:   0
+  RealTime:    0
+  RunTime:     0
+  FreelistP:   0
+  FreelistT:   0
+  FreelistC:   0
+  FreelistL:   0
+  rootname:    0
+  listingname: 0
+  relname:     0
+  sourcename:  0
+  treename:    0
+  messagename: 0
+ }
+
+let Start(Entrance) be
+{main
+
+restart:
+
+// Initialize global statics for MAIN
+
+  let v_vec 220
+  rootname_v
+  listingname_v+100
+  relname_v+120
+  sourcename_v+140
+  treename_v+180
+  messagename_v+200
+  jimtbptr_lv jimtbl
+  jimbytptr_POINT(7,#400000)
+  Warns_0
+  Cautions_0
+  Reportcount_0
+  GetnameP_0
+  StaticN_0
+  NextParameter_0
+  RelLength_-1
+  Source_-1
+  rootname|0_0
+  listingname|0_0
+  relname|0_0
+  sourcename|0_0
+  treename|0_0
+  messagename|0_0
+
+  let cclnm_"000BCP.TMP"
+  test Entrance=0 then cclnm_0
+  or
+  { static
+    { v: vec 20
+     }
+    JSYS(#13,v)                 // GJINF
+    let x_v|3
+    for i_0 to 5 do v|i_0
+    let stf(bs,ch) be
+    { v|0_v|0+1
+      v|(v|0)_ch
+     }
+    let jf_CreateOutput(-stf)
+    WriteN(jf,x)
+    EndWrite(jf)
+    x_0
+    for i_1 to v|0 do x_(x lshift 9)\v|i
+    cclnm|0_(cclnm|0 & (#777000,,0)) \ x \ #60060060
+   }
+
+  unless cclbool do cmdinstream_FindInput(cclnm)
+  INPUT_cmdinstream
+
+  { let v_vec 20
+    v|1_#100001,,0
+    v|2_-1,,'<bcpl>compdict.sav'
+    unless JSYS(#20,v)=2
+    do Help("BCPL: can't find <bcpl>compdict.sav*n")
+    v|1_#400000,,rh v|1
+    JSYS(#200,v)                // get
+   }
+
+  RestoreDict(#400,DictOffset,1)
+  let FREELISTSTART_DictOffset|0+DictOffset
+
+// init LEX variables
+
+  ReadAhead_false
+  LastItem_0
+  SWcontrol_false
+
+  B_false
+  ST_0
+  LineP_0
+  Chkind_Empty
+  NLPending_false
+  StackBase_(lv Entrance)-2
+  FreelistP_FREELISTSTART
+
+// Pointer to free storage list for tree
+
+  FreelistT_FREELISTSTART+#77777
+
+// Top of the free storage list for tree
+
+  FreelistC_FREELISTSTART
+
+// Bottom of free storage list for tree
+
+  FreelistL_0
+  ConsoleStream _ CreateOutput(0)
+                                // Stream to console.
+  OUTPUT _ ConsoleStream
+  let v_vec 20
+  X_v                           // vector for JSYS arguments
+
+  SWupper_false
+
+// Find out what the user wants.
+
+  getargs(Entrance=1)           // makes rootname, sourcename, relname,
+                                //-- listingname, and SWbits
+  if Entrance=1 do SWbits<<SWlocal.File_true
+
+// Open a stream for compiler comments and error messages.
+
+  MONITOR _SWbits << SWlocal.File => valof
+  { let filechars_rootname|0
+    rootname|(filechars+1)_$.
+    rootname|(filechars+2) _ $g
+    rootname|(filechars+3) _ $;
+    rootname|(filechars+4) _ $T
+    rootname|0 _ filechars+4
+    Packstring(rootname,messagename)
+    rootname|0_filechars
+    resultis CreateOutput(messagename)
+   }
+  , ConsoleStream
+
+  WriteS("[BCPL:*s")
+  WriteS(sourcename)
+  WriteS("]*n")
+
+  { let v_vec 20
+    let v1_vec 20
+    v|1_#100001,,0
+    v|2_-1,,'<bcpl>userlog.msg'
+    if JSYS(#20,v)=2 do
+    { let jfn_rh v|1
+      v|2_#70000,,#20000
+      if JSYS(#21,v)=2 do
+      { WriteS(jfn,MakeDate(v1))
+        WriteS(jfn," , ")
+        JSYS(#13,v)             // GJINF
+        v|2_v|1
+        v|1_jfn
+        JSYS(#41,v)             // DIRST
+        WriteS(jfn," compiled ")
+        WriteS(jfn,sourcename)
+        WriteS(jfn,"*c*l")
+       }
+      EndWrite(jfn)
+     }
+   }
+  OUTPUT _ MONITOR
+
+  if SWbits << SW.Synrep do SWbits << SWlocal.Tree2 _ false
+  if SWbits << SW.Debug do
+  { WriteS("*nStack starts at ")
+    WriteOct(StackBase)
+    PBOUT($*n)
+   }
+  if SWbits << SW.Help do Help("About to start compiling. End of readparameters in Main1")
+
+  let v _ vec ExtDeclT
+  ExtDecl, ExtDeclS _ v, 0      // External declarations.
+
+  let v _ vec GetnameT
+  GetnameV _ v                  // Names of files included in the
+                                //-- compilation.
+  for k _ 0 to GetnameT do GetnameV|k _ 0
+                                // Clear the names.
+
+Compile:                        // Come here to start compiling.
+  { let Tree _ Newvec(0)        // The AE-tree goes here when it has
+                                //-- been constructed.
+
+    if SWbits << SW.Debug do
+    { WriteS("Tree starts at ")
+      WriteOct(Tree)
+      PBOUT($*n)
+     }
+    WriteS("CAE:  ")
+    RSclck()
+    ConstructTree(Tree,sourcename)
+                                // DO THE WORK.
+
+    if SWbits << SW.Debug do
+    { WriteS("*nAE-Tree size _ ")
+      WriteN(FreelistL + FreelistP - FreelistC)
+      WriteS("[Decimal], from ")
+      WriteOct(Tree)
+      WriteS(" to ")
+      WriteOct(FreelistP)
+      PBOUT($*n)
+     }
+    Wrtime()
+    if SWbits << SW.Pprep goto Terminate
+
+    if SWbits << SWlocal.Tree \ SWbits << SWlocal.Tree2 do
+                                                           // He wants
+                                                           //-- a
+                                                           //-- listing
+                                                           //-- of the
+                                                           //-- AE-tree.
+    { treename_Newvec(20)
+      let t _ rootname|0
+      rootname|(t+1)_$.
+      rootname|(t+2)_$y
+      rootname|0_t+2
+      Packstring(rootname,treename)
+      rootname|0_t
+      WriteS("AE-Tree to file ")
+      WriteS(treename)
+      PBOUT($*n)
+      TreeStream _ CreateOutput(treename)
+      OUTPUT _ TreeStream
+      WriteS("*nAE-Tree for ")
+      WriteS(sourcename)
+      WriteS("*n*n")
+      if SWbits << SWlocal.Tree do
+      { Curfile _ -1
+        Plist(rv Tree, 0, 40)
+        unless SWbits << SWlocal.Tree2 do
+        { EndWrite(OUTPUT)
+          TreeStream _ 0
+         }
+       }
+      OUTPUT _ MONITOR
+     }
+
+    if SWbits << SW.Synrep do goto Compile
+
+    if SWbits << SW.Symtab do SymtabInit()
+                                // Initialize the symbol table.
+    unless Reportcount eq 0 do
+    { Abort()
+      test Entrance=1 then
+      { cclbool_true
+        goto restart
+       }
+      or finish
+     }
+    WriteS("TRN:  ")
+
+    { let snm _ vec 20
+      Packstring(rootname, snm)
+      TranslateTree(rv Tree, snm, listingname, rootname)      // DO THE WORK.
+    }
+    if SWbits << SWlocal.Tree2 do
+                                  // He wants the tree printed with
+                                  //-- optimizations marked.
+    { OUTPUT _ TreeStream
+      if SWbits << SWlocal.Tree do PBOUT($*p)
+                                   // New page.
+      WriteS("Optimized Tree.*n*n")
+      Plist(rv Tree, 0, 40)
+      EndWrite(OUTPUT)
+      OUTPUT _ MONITOR
+      TreeStream _ 0
+     }
+
+    if SWbits << SW.Debug do
+    { WriteS("Total tree space = ")
+      WriteN(FreelistL + FreelistP - FreelistC)
+      WriteS(" words.*n")
+     }
+    Wrtime()
+    unless Reportcount eq 0 do
+    { Abort()
+      test Entrance=1 then
+      { cclbool_true
+        goto restart
+       }
+      or finish
+     }
+	unless SWbits<<SWlocal.Nocg do
+	{ CGAssemble(relname)
+	Wrtime()
+	}
+
+    if SWbits << SW.Symtab do SymtabTransEnd()
+
+    unless Reportcount eq 0 do
+    { Abort()
+      test Entrance=1 then
+      { cclbool_true
+        goto restart
+       }
+      or finish
+     }
+   }
+
+Terminate:
+  if SWbits << SW.Symtab do
+  { let symbtabname_vec 20
+    let t_rootname|0
+    rootname|(t+1)_$.
+    rootname|(t+2)_$s
+    rootname|0_t+2
+    Packstring(rootname,symbtabname)
+    rootname|0_t
+    SymtabFinish(symbtabname)
+   }
+  unless OUTPUT eq ConsoleStream do
+  { EndWrite(OUTPUT)
+    OUTPUT _ ConsoleStream
+   }
+  unless TreeStream eq 0 do EndWrite(TreeStream)
+
+  if (Cautions > 0 \ Warns > 0) & SWbits << SWlocal.File
+  do                            // Tell him he had warnings.
+  { WriteS("Compilation of ")
+    WriteS(sourcename)
+    WriteS(" produced ")
+    WriteS(Warns > 0 => "warnings", "cautions")
+    PBOUT($*n)
+    unless MONITOR=ConsoleStream do
+    { WriteS("See file: ")
+      WriteS(messagename)
+      Writech($*n)
+     }
+
+   }
+  if SWbits << SW.Help do Help("Normal Compiler Termination!!! Help in Main1")
+  if Entrance=1 do
+  { cclbool_true
+    goto restart
+   }
+  finish
+ }main
+
+and Abort() be
+{ unless MONITOR eq ConsoleStream do EndWrite(MONITOR)
+  unless TreeStream eq 0 do EndWrite(TreeStream)
+
+  OUTPUT _ ConsoleStream
+  WriteS("Compilation of*s")
+  WriteS(sourcename)
+  WriteS("*saborted*n")
+  if SWbits<<SWlocal.File do
+  { WriteS("BCPL compiler messages were written in file: ")
+    WriteS(messagename)
+    Writech($*n)
+   }
+  if SWbits << SW.Help do Help("Help call before Aborting")
+  rv #42_rv #42+1
+ }
+
+and Stopcl() _ valof
+{ X|1 _ -5
+  JSYS(#15,X)
+  resultis X|1- RunTime
+ }
+and RSclck() be
+{ JSYS(#14,X)
+  RealTime_X|1
+  X|1_-5
+  JSYS(#15,X)
+  RunTime_X|1
+ }
+and FixName(X) be
+{ let QQ _ vec 50
+  Unpackstring(X,QQ)
+  let Num _ QQ|0
+  for i _ 1 to Num
+  do if QQ|i = $. do return
+  QQ|0, QQ|(Num+1), QQ|(Num+2), QQ|(Num+3), QQ|(Num+4) _
+    Num+4, $., $B,$C,$P
+  Packstring(QQ,X)
+ }
+
+// Computes rootname,sourcename, listingname, relname, and SWbits.
+
+and getargs(cclsw) be
+{
+commands:
+  unless cclsw do WriteS(Greeting)
+  SWbits_SWYYYYINIT
+  let v_vec 100
+  v|0_0
+  { Ch_PBIN()
+    if cclsw&EofFlg do Ch_0
+    switchon Ch into
+    {
+      default:  v|0_v|0+1
+                v|(v|0)_Ch
+      case $*s:
+      case $*t: endcase
+
+      case $^a: test v|0 > 0 then
+                { Writech($\)
+                  Writech(v|(v|0))
+                  v|0_v|0-1
+                  endcase
+                 }
+                or
+                { Writech($^g)
+                  endcase
+                 }
+      case $^q: v|0_0
+                WriteS("##*n")
+                endcase
+
+      case 0:
+      case $^z: if cclsw do
+                { let v_vec 20
+                  v|1_INPUT
+                  unless JSYS(#26,v)=2 do Help("DELF failed*n")
+                 }
+                finish
+      l:
+      case $?:  SWbits_SWYYYYINIT
+                WriteS("*n[<rel name>[,<listing name>]_]<source name>[switches>]<cr>*n")
+                WriteS("(Type HELP<cr> for more help)*n")
+      case $^r: Writech($*n)
+                WriteS(Greeting)
+                for i_1 to v|0 do Writech(v|i)
+                endcase
+
+      case $^[:
+      case $*n:
+      case $*c:
+      case $*l: if v|0 > 0 do break
+     }
+   }
+  repeat
+  if cclsw & (v|(v|0)=$!) do
+  { let v1_vec 30
+    let v2_vec 20
+    Unpackstring("<subsys>",v1)
+    for i_1 to v|0-1 do
+    { v1|0_v1|0+1
+      v1|(v1|0)_v|i
+     }
+    v1|0_v1|0+1
+    v1|(v1|0)_$.
+    v1|0_v1|0+1
+    v1|(v1|0)_$s
+    v1|0_v1|0+1
+    v1|(v1|0)_$a
+    v1|0_v1|0+1
+    v1|(v1|0)_$v
+    Packstring(v1,v2)
+    StringToASCIZ(v2,v1)
+    v2|1_#100001,,0
+    v2|2_-1,,v1
+    unless JSYS(#20,v2)=2 do Help("GTJFN failed for loader*n")
+    lslide(rh v2|1)
+   }
+  if v|0=4 &
+     (v|1&#137)=$H &
+     (v|2&#137)=$E &
+     (v|3&#137)=$L &
+     (v|4&#137)=$P
+ do
+  { WriteS("*n[<rel name>[,<listing name>]_]<source name>[switches>]<cr>*n*n")
+    WriteS("Square brackets mean optional*n*n")
+    WriteS("If unspecified, the source file name is assumed to have a .BCP extension*n*n")
+    WriteS("If the rel name is missing, the output rel file will be named*n*s*s*s <source name>.REL*N*n")
+    WriteS("if the listing name is given with no extension, the extension*nis assumed to be *"LST*"*n*n")
+    WriteS("Switches:*n*t/u*tConvert each uppercase alphabetic character in the*n*t*tsource files to lowercase as it is read in, unless it is*n*t*tpreceded by the character *a, or the word it is in*n*t*tis preceded by two *a characters. This is useful for *n*t*tBCPL source files which are prepared on an all upper*n*t*tcase terminal.*n")
+    WriteS("*t/c*tCause compilation to terminate before code generation.*n")
+    WriteS("*t/f*tDivert compiler messages to a file named *n*t*t<source file name>.g;T*n*t/s*tDo not output a symbol table (binary) file as a side effect*n*t*tof this compilation. Normally, the file will be output and named*n*t*t<source file name>.s*n*n")
+    goto commands
+   }
+  let snm_vec 100
+  snm|0_0
+  let lnm_vec 100
+  lnm|0_0
+  let rnm_vec 100
+  rnm|0_0
+  let nm_rnm
+  for i_1 to v|0
+  do
+  { switchon v|i into
+    {
+      default:
+         nm|0_nm|0+1
+         nm|(nm|0)_v|i
+         loop
+
+      case $,:
+         { let t_0
+           for i_1 to nm|0
+           do test nm|i=$. then
+              { t_i-1
+                break
+               }
+              or t_i
+           if t > 6
+           do
+           { WriteS("output file names must be less than 7 characters long*n")
+             goto commands
+            }
+          }
+         nm_lnm
+         loop
+
+      case $_:
+         { nm_snm
+           loop
+          }
+      case $/:
+         { if i=v|0 do goto l
+           switchon v|(i+1)\#40 into
+           {
+             default: goto l
+
+             case $u: SWupper_true
+                      endcase
+
+             case $s: SWbits<<SW.Symtab_false
+                      endcase
+
+             case $d: SWbits<<SW.Debug_true
+                      endcase
+
+             case $h: SWbits<<SW.Help_true
+                      endcase
+
+             case $f: SWbits<<SWlocal.File_true
+                      endcase
+
+             case $y: SWbits<<SW.Synrep_true
+                      endcase
+
+             case $p: SWbits<<SW.Pprep_true
+                      endcase
+
+             case $e: SWbits<<SWlocal.Tree2_true
+                      endcase
+
+             case $t: SWbits<<SWlocal.Tree_true
+                      endcase
+
+             case $c: SWbits<<SWlocal.Nocg_true
+                      endcase
+            }
+           if i+1=v|0 do break
+           i_i+2
+           unless v|i=$/ do goto l
+           loop
+          }
+         repeat
+         break
+     }
+
+   }
+  if snm|0=0 & rnm|0 ne 0 & lnm|0 ne 0 do goto l
+  if snm|0=0 & rnm|0=0 do
+  { let t_lnm
+    lnm_snm
+    snm_t
+   }
+  if snm|0=0 & rnm|0 ne 0 do
+  { let t_rnm
+    rnm_snm
+    snm_t
+   }
+  if rnm|0=0 do
+  { for i_1 to snm|0
+    do test snm|i=$. then break
+       or test snm|i=$> then rnm|0_0
+          or
+          { rnm|0_rnm|0+1
+            rnm|(rnm|0)_snm|i
+           }
+
+   }
+  unless isdot(snm) do
+  { snm|(snm|0+1)_$.
+    snm|(snm|0+2)_$B
+    snm|(snm|0+3)_$C
+    snm|(snm|0+4)_$P
+    snm|0_snm|0+4
+   }
+  unless (lnm|0 = 0) \ isdot(lnm) do
+  { lnm|(lnm|0+1)_$.
+    lnm|(lnm|0+2)_$L
+    lnm|(lnm|0+3)_$S
+    lnm|(lnm|0+4)_$T
+    lnm|0_lnm|0+4
+   }
+  unless isdot(rnm) do
+  { rnm|(rnm|0+1)_$.
+    rnm|(rnm|0+2)_$R
+    rnm|(rnm|0+3)_$E
+    rnm|(rnm|0+4)_$L
+    rnm|0_rnm|0+4
+   }
+  Packstring(snm,sourcename)
+  Packstring(lnm,listingname)
+  Packstring(rnm,relname)
+  for i_1 to snm|0
+  do test snm|i=$. then break
+     or test snm|i=$> then rootname|0_0
+        or
+        { rootname|0_rootname|0+1
+          rootname|(rootname|0)_snm|i
+         }
+ }
+
+and isdot(v)_valof
+{ for i_1 to v|0
+  do if v|i=$. do resultis true
+  resultis false
+ }
+
+and DictRetFree() be Help("DictRetFree called*n")

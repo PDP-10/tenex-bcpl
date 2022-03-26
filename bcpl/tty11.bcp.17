@@ -1,0 +1,139 @@
+manifest { EOL:#37}
+
+// BCPL PDP-11 utilities
+get "HEAD.BCP"
+get "HEADIO.BCP"
+
+global {
+// Fudge to make computed calls in IO11 work
+
+InitTTY:	#606
+Tci:		#607
+Tco:		#610
+GetTTICT:	#611
+GetTTOCT:	#612
+CfibfTTY:	#613
+CfobfTTY:	#614
+NilFn:		#615
+CloseTTO:	#616
+}
+manifest { OBUFSIZE : 128	// Power of 2 permits BIC wraparound
+           IBUFSIZE : 16	// Power of 2 permits BIC wraparound
+           TKS      : rv #177560	// Keyboard Status
+           TKB      : rv #177562	// Typed char
+           TPS      : rv #177564	// Printer Status
+           TPB      : rv #177566	// Char to type
+          }
+
+manifest { OutputBuffer : vec OBUFSIZE
+         InputBuffer  : vec IBUFSIZE
+}
+
+static {         OutputStore  : 0
+         OutputLoad   : 0
+         OutputCount  : 0
+         InputStore   : 0
+         InputLoad    : 0
+         InputCount   : 0
+         SpecialOutput: 0
+         ControlO     : 0
+        }
+
+let InitTTY() be
+{ CfobfTTY()
+  CfibfTTY()
+ }
+
+and Tco(Ch) _ valof
+{ if ControlO then resultis Ch
+  if Ch eq EOL then { Tco($*c); Tco($*l); resultis EOL}
+  while OutputCount ge OBUFSIZE do { }
+  rh OutputBuffer|OutputStore _ Ch
+  OutputStore _ OutputStore + 1
+  OutputStore _ OutputStore & OBUFSIZE-1
+  OutputCount _ OutputCount + 1
+  TPS _ TPS \ #100
+  resultis Ch
+ }
+
+and Tci() _ valof
+{ while InputCount < 1 do { }
+  ControlO _ false
+  let Ch _ (rh InputBuffer|InputLoad) & #177
+  InputLoad _ InputLoad + 1
+  InputLoad _ InputLoad & IBUFSIZE-1
+  InputCount _ InputCount - 1
+  resultis Tco(selecton Ch into
+	    { case EOL: $*c
+	    case $*c: EOL
+	    case $a to $z: Ch-32
+	    default: Ch
+	    }
+	)
+ }
+
+and CfibfTTY() be
+{ TKS _ TKS & not #100	// Prevent input interrupt
+  InputStore, InputLoad, InputCount _ 0, 0, 0
+  TKS _ TKS \ #100	// Permit input interrupt
+ }
+
+and CfobfTTY() be
+{ OutputCount _ 0
+  OutputStore, OutputLoad _ 0, 0
+  SpecialOutput _ -1
+ }
+
+and TCIPI() be
+{ let Ch _ TKB
+  if Ch eq $^O then { ControlO _ true
+                      CfobfTTY()
+                      return}
+  if InputCount ge IBUFSIZE then
+  { SpecialOutput _ 7
+    TPS _ TPS \ #100
+    return
+   }
+  rh InputBuffer|InputStore _ TKB
+  InputStore _ InputStore + 1
+  InputStore _ InputStore & (IBUFSIZE-1)
+  InputCount _ InputCount + 1
+ }
+
+and TCOPI() be
+{ if SpecialOutput ge 0 then
+  { TPB _ SpecialOutput; SpecialOutput _ -1; return}
+  if OutputCount le 0
+  then	{ TPS _ TPS & ~#100
+	return
+	}
+  rh TPB _ rh OutputBuffer|OutputLoad
+  OutputLoad _ OutputLoad + 1
+  OutputLoad _ OutputLoad & (OBUFSIZE - 1)
+  OutputCount _ OutputCount - 1
+ }
+
+and GetTTOCT() _ OutputCount
+
+and GetTTICT() _ InputCount
+
+
+and CloseTTO() be
+{   WriteS(TTY,"*n*l*l*l*l*l*l*l*l*l")
+    Dobe (TTY)
+}
+
+and NilFn() _ 0
+
+static
+{ TTY: table lv InitTTY,
+             lv Tci,
+             lv Tco,
+             lv GetTTICT,
+             lv GetTTOCT,
+             lv CfibfTTY,
+             lv CfobfTTY,
+	     lv NilFn,
+             lv CloseTTO,
+             (lv NilFn) repname 10
+}

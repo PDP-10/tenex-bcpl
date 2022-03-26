@@ -1,0 +1,346 @@
+
+// <XBCPL>CG4.BCP;12    28-MAY-73 15:02:49 EDIT BY ROVNER
+// fix for jsp 1,1
+
+// BCPL Code Generator -- Subroutines.
+// Last modified on tue 31 aug 71 1842.39 by   AE.
+
+// CGapply
+// CGrv
+// CGsubt
+// Outconsts
+// Outnumbs
+// CGrel
+//CGrelVal
+// CGplus
+// CGshift
+// CGscale
+// CGlogop
+// CGswitch
+// CGstring
+// storestring
+
+get "<xbcpl>headcg"
+get "<bcpl>utilhead"
+
+let CGapply(Op, S,MAXSSP) be
+{ let v := vec 10
+  Store(0, SSP-2)
+  Makeaddrble(Arg1)
+  if H1|Arg1 eq LOCAL
+  do while MovetoReg(Arg1,-1)=1 do loop
+  WRMAC(ADDI,StackAC, NUMBER,S, 0,0,0)
+  CompMAC(JSP,JSPAC,Addr(Arg1,v))
+  WRMAC(SUBI,StackAC, NUMBER,S, 0,0,0)
+WRMAC(MOVEI,MAXAC,LOCAL,MAXSSP,0,0,0)
+  Stack(S)
+  if Op eq FNAP do LoadT(P10reg, RsltAC)
+  return
+ }
+
+and CGrv() be
+{ if H2|(Arg1) eq 0 do
+  { H2|(Arg1) := RV
+    return
+   }
+  if H2|(Arg1) eq PLUS do
+  { H2|(Arg1) := RVPLUS
+    return
+   }
+  MovetoReg(Arg1, -1)
+  H2|(Arg1) := RV
+ }
+
+and CGsubt() be
+{
+  let r:=nil
+  test Op=FMINUS then Makeaddrble(Arg1)
+  or
+  { MakeNUMSimple(Arg1)
+    MakeNUMSimple(Arg2)
+    if H1|Arg1 eq NUMBER & H2|Arg1 eq 0 & H2|Arg2 eq 0 do
+    { H2|Arg2,H4|Arg2 := PLUS, - H3|Arg1
+      MakeNUMSimple(Arg2)
+      Stack(SSP-1)
+      return
+     }
+
+    Makeaddrble(Arg1)
+    if Iszero(Arg2) do
+    {
+      MovetoReg(Arg1,-1)
+      CompMAC(MOVNS,0, Addr(Arg1,V1))
+      Lose1(H1|Arg1,H2|Arg1,H3|Arg1,H4|Arg1)
+      return
+     }
+   }
+  r:=MovetoReg(Arg2,-1)
+  CompMAC((Op=FMINUS)=>FSBR,SUB,r, Addr(Arg1,V1))
+  Lose1(P10reg,0,r,0)
+ }
+
+and Outconsts() be
+{ let i := 0
+  until i eq SvecP do
+  { let Size := Svec|(i+1)
+    WRLAB(Svec|(i))
+    for j := i+2 to i+Size+1 do WRDATA(Svec|(j), 0, 0)
+    i := i + Size + 2
+   }
+  SvecP := 0
+
+  i := 0
+  until i eq StatP do
+  { let G, L := StatV|(i+1), StatV|(i+2)
+    WRLAB(StatV|(i))
+    WRDATA(G, L, G )
+    i := i + 3
+   }
+
+  StatP := 0
+ }
+
+and Outnumbs() be
+{ for i := 1 to ConstP do
+  { WRLAB(ConstL|(i))
+    WRDATA(ConstV|(i), 0, 0)
+   }
+ }
+
+and CGrel(Relop,b,l) be
+{rel                            // if b is false, use "not Relop"
+
+// compile a jump^relop to l
+
+  let OPC,r := nil,nil
+  Store(0,SSP-2)
+
+  unless b do Relop := selecton Relop into
+  {
+    case EQ: NE
+    case NE: EQ
+    case LE: GR
+    case GE: LS
+    case LS: GE
+    case GR: LE
+   }
+
+  r:=MovetoReg(Arg1, -1)
+  Initstack(SSP-1)
+
+  OPC := selecton Relop into
+  {
+    case EQ: JUMPE
+    case NE: JUMPN
+    case LE: JUMPLE
+    case GE: JUMPGE
+    case LS: JUMPL
+    case GR: JUMPG
+   }
+
+  WRMAC(OPC,r, LABEL,l, 0,0,0)
+ }rel
+
+and CGrelVal(Relop) be
+{relval                         // Compare Arg2 Relop Arg1
+
+// and Lose1 a true or false
+// Neither arg is 0
+
+  let OPC,r,Rr:=nil,nil,nil
+  and Immed:=false
+  and v:=vec 10
+
+  r:=MovetoReg(Arg2,-1)
+  MakeNUMSimple(Arg1)
+
+  if H1|Arg1 eq NUMBER & H2|Arg1 eq 0 & lh H3|Arg1 eq 0 do Immed:=true
+
+  unless Immed do Makeaddrble(Arg1)
+  OPC := selecton Relop into
+  {
+    case EQ: Immed => CAIE,CAME
+    case NE: Immed => CAIN,CAMN
+    case LS: Immed => CAIL,CAML
+    case GR: Immed => CAIG,CAMG
+    case LE: Immed => CAILE,CAMLE
+    case GE: Immed => CAIGE,CAMGE
+   }
+
+  Rr:=NextP10reg()              // The reg holding the result of this
+                                //-- expr
+  WRMAC(SETO,Rr, 0,0, 0,0,0)    // true until test fails
+  test Immed
+  ifso WRMAC(OPC,r, NUMBER,H3|Arg1, 0,0,0)
+  ifnot CompMAC(OPC,r, Addr(Arg1,v))
+  WRMAC(SETZ,Rr, 0,0, 0,0,0)    // test failed
+  Lose1(P10reg,0,Rr,0)
+ }relval
+
+and CGplus() be
+{plus
+  let r:=nil
+  and v:=vec 10
+  unless Op=FPLUS do
+  { MakeNUMSimple(Arg1)
+    MakeNUMSimple(Arg2)
+    if H1|Arg1 eq NUMBER & H2|Arg2 eq 0 & H2|Arg1 eq 0 do
+    { H2|Arg2 := PLUS
+      H4|Arg2 := H3|Arg1
+      MakeNUMSimple(Arg2)       // in case it^s a sum of 2 #^s
+      Stack(SSP-1)
+      return
+     }
+
+    if H1|Arg2 eq NUMBER & H2|Arg2 eq 0 & H2|Arg1 eq 0 do
+    { Lose1(H1|Arg1,PLUS,H3|Arg1,H3|Arg2)
+      return
+     }
+   }
+
+// have to do it the hard way
+
+  r:=MovetoReg(Arg2,-1)
+  Makeaddrble(Arg1)
+  CompMAC((Op=FPLUS)=>FADR,ADD,r, Addr(Arg1,v))
+  Lose1(P10reg,0,r,0)
+ }plus
+
+and CGshift(OP) be
+{shift
+  let r:=nil
+  and Sr:=nil                   // possible register to hold the shift
+
+// someday, detect the half word to self type op^s
+
+// detect shifts by a constant
+
+  MakeNUMSimple(Arg1)
+  if H1|Arg1 eq NUMBER & H2|Arg1 eq 0 & (lh H3|Arg1) eq 0 do
+  { if OP eq RSHIFT do H3|Arg1 := - H3|Arg1
+    if H3|Arg1 eq 0 return
+    r:=MovetoReg(Arg2,-1)
+    WRMAC(LSH,r, NUMBER,H3|Arg1, 0,0,0)
+    Lose1(P10reg,0,r,0)
+    return
+   }
+
+// can^t shift immed
+
+  Sr := MovetoReg(Arg1,-1)
+  r:=MovetoReg(Arg2,-1)
+  if OP eq RSHIFT do WRMAC(MOVNS,0, P10reg,Sr, 0,0,0)
+  WRMAC(LSH,r, 0,0, 0,Sr,0)
+  Lose1(P10reg,0,r,0)
+ }shift
+
+and CGscale(OP) be
+{scale
+  let r:=nil
+  and Sr:=nil                   // possible register to hold the shift
+
+// someday, detect the half word to self type op^s
+
+// detect shifts by a constant
+
+  MakeNUMSimple(Arg1)
+  if H1|Arg1 eq NUMBER & H2|Arg1 eq 0 & (lh H3|Arg1) eq 0 do
+  { if OP eq RSCALE do H3|Arg1 := - H3|Arg1
+    if H3|Arg1 eq 0 return
+    r:=MovetoReg(Arg2,-1)
+    WRMAC(ASH,r, NUMBER,H3|Arg1, 0,0,0)
+    Lose1(P10reg,0,r,0)
+    return
+   }
+
+// can^t shift immed
+
+  Sr := MovetoReg(Arg1,-1)
+  r:=MovetoReg(Arg2,-1)
+  if OP eq RSCALE do WRMAC(MOVNS,0, P10reg,Sr, 0,0,0)
+  WRMAC(ASH,r, 0,0, 0,Sr,0)
+  Lose1(P10reg,0,r,0)
+ }scale
+
+and CGlogop(OP) be
+{logop
+  let r:=nil
+  and OPC:=selecton OP into
+  {
+    case LOGAND: AND
+    case LOGOR:  IOR
+    case EQV:    NXOR
+    case NEQV:   XOR
+   }
+
+  and A1,A2 := Arg1,Arg2
+  and v:=vec 10
+
+  if H1|Arg1 eq P10reg logor (Addrble(Arg2) & H1|Arg2 ne P10reg)
+  do A1,A2:=Arg2,Arg1
+
+  Makeaddrble(A1)
+  r:=MovetoReg(A2,-1)
+  CompMAC(OPC,r,Addr(A1,v))
+  Lose1(P10reg,0,r,0)
+ }logop
+
+and CGswitch() be
+{
+  let q:=ReadNM()
+  let DLBL:=ReadL()
+
+  let r:=MovetoReg(Arg1,-1 )
+
+  for i:=1 to q do              // put out the compare code
+  { let a:=ReadNM()
+    let l:=ReadL()
+
+    test lh a eq 0
+    ifso WRMAC(CAIN,r, NUMBER,a, 0,0,0)
+    ifnot WRMAC(CAMN,r, NUMBER,a, 0,0,1)
+                                // Literal
+
+    WRMAC(JRST,0, LABEL,l, 0,0,0)
+                                // Jump if equal
+   }
+
+  WRMAC(JRST,0, LABEL,DLBL, 0,0,0)
+                                // Jump default: if fall through
+  Stack(SSP-1)
+
+ }
+
+and CGstring(n,e) be
+{ let l := NextParam()
+  let r:=NextP10reg()
+  WRMAC(MOVEI,r, LABEL,l, 0,0,0)
+  LoadT(P10reg,r)
+  test NumbArgs()=1 then storestring(n, l)
+  or storestring(n,l,e)
+ }
+
+and storestring(n, l,e) be
+{ let v := vec 520
+  let Size := n/Bytesperword + 1
+  e:=(NumbArgs()=3) & ~e
+  if e do Size:=n/5+1
+  if SvecP+Size+2 gr SvecT do
+  { let m := NextParam()
+    WRMAC(JRST,0, LABEL,m, 0,0,0)
+    Outconsts()
+    WRLAB(m)
+   }
+  for i := 1 to n do v|i := Readch(INPUT,lv Ch)
+  v|0 := n
+  Svec|SvecP := l
+  Svec|(SvecP+1) := Size
+  test e then
+  { let vv:=vec 200
+    Packstring(v,vv)
+    StringToASCIZ(vv,lv Svec|(SvecP+2))
+   }
+  or Packstring(v, lv Svec|(SvecP+2))
+  SvecP := SvecP + Size + 2
+ }
+

@@ -1,0 +1,34 @@
+@teco.SAV;42 
+
+*;y$
+
+INPUT FILE: exAMPLE.;1 [Confirm]
+47 CHARS
+
+*zt$
+LOADER
+sys:bcplib
+dsk:%#Program#$ssa$$$%#Program#.sav
+
+
+*;u$
+
+OUTPUT FILE: EXAMPLE.;2 [New version]
+
+*;h$
+@do
+
+Input file: exAMPLE.;2 [Old version]
+Program: t
+@LOADER
+*sys:bcplib
+*dsk:t$
+
+FIRST 4K CORE, 461 WORDS FREE 
+LOADER USED 7+4K CORE
+
+EXIT.
+^C
+@ssaVE (PAGES FROM) 0 (TO) 777 (ON) t.sav [New version]
+@
+

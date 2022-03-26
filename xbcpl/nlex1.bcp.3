@@ -1,0 +1,536 @@
+
+// BCPL Compiler -- Lexical Analyzer, Part 1.
+
+// Nextsymb Read the next lexical token and store it into Symb.
+// *LexOut  Output a lexeme, inserting SEMICOLON or DO as needed.
+// *Kind  Return a constant describing what sort of thing a character
+//-- is.
+// *Numinp  Convert an unpacked string into a fpt number using the FLIN
+//-- JSYS.
+// * local to this file.
+
+get "<BCPL>utilhead"
+get "<BCPL>head"
+get "<XBCPL>headlex"            // Communication in LEX and CAE.
+get "<XBCPL>headbcpl"           // BCPL compiler library declarations.
+get "<XBCPL>headlexcon"         // Declarations of the values of the
+                                //-- lexemes.
+
+manifest                        // Values returned by Kind to be stored
+                                //-- into Chkind.
+{ Empty :=       0
+                 Simple :=
+                 1
+                 Ignorable :=
+                 2
+                 Digit :=
+                 4
+                 Capital :=
+                 5
+                 Small :=
+                 6
+ }
+
+// The following routine is the lexical processor for BCPL.  Calling it
+//-- causes the next lexeme
+// to be read from the input stream and the appropriate canonic symbol
+//-- to be stored into Symb.
+// In addition, there may be data in the V-vector, as follows...
+// NUMBER  value
+// CHARCONST value
+// NAME  location
+// STRINGCONST n  n words of the string, packed 4 chars/word as usual.
+// SECTBRA  n  the label, as a packed string n words long
+// SECTKET  n  ditto
+// For a name, the datum in V|0 is the absolute address of the name in
+//-- the symbol table.
+
+// This routine also handles the preprocessor rules regarding insertion
+//-- of SEMICOLON and DO
+// where needed.
+
+let Nextsymb() be
+{ WUPFLG:=false
+  if ReadAhead do               // Do we already have a symbol in hand?
+  { Symb, ReadAhead := ExtraSymb, false
+                                // Yes, so return it.
+    return
+   }
+
+  Curline:=JRFPTR(INPUT)	//update the char ptr to the current command before each symbol is read.
+
+  let Vp := 0; V|0 := 0         // Counter of characters read.
+  unless Chkind eq Empty goto M
+
+Next:                           // Come here to read next character.
+  Rch()
+
+L:
+  Chkind := Kind(Ch)
+M:
+  switchon Chkind into          // What sort of character is it?
+  { case Ignorable:
+       Rch() repeatwhile Ch eq $*s \ Ch eq $*t
+                                // Skip spaces and such.
+       goto L
+
+    case Digit:
+       { let SWdot := false     // No decimal point has been read.
+         { switchon Ch into     // What sort of character is it?
+           { default:           // Not part of a number, so jump out.
+               break
+
+             case $E:
+             case $e:
+               test SWdot then
+               { if Ch=$e then Ch:=$E ; endcase
+                }
+               or break
+             case $+:
+             case $-:
+               test SWdot & (V|Vp=$e \ V|Vp=$E) then endcase
+               or break
+             case $.:           // A decimal point.
+               if SWdot break   // The second one, so it"s not part of
+                                //-- a number.
+               Rch()            // Read the next character.
+               unless $0 le Ch le $9 do
+                                        // If next not digit, dot is
+                                        //-- not part of number.
+               { ReadAhead, ExtraSymb := true, q2 DOT; break
+                }
+               Vp := Vp + 1; V|Vp := $.
+               SWdot := true    // Remember that we saw it.
+             case $0 to $9:     // A digit.
+            }
+           Vp := Vp + 1; V|Vp := Ch
+                                // Store the character.
+           Rch()                // And read another.
+          }
+         repeat
+
+         test SWdot             // Is it a floating-point number?
+         ifso { V|0 := Vp; V|0 := Numinp(V) }
+                                // Yes, so convert it.
+         ifnot
+         { let n := 0
+           for k := 1 to Vp do n := 10*n + (#17 & V|k)
+           V|0 := n
+          }
+         LexOut(NUMBER)
+         Chkind := Kind(Ch)
+         return
+        }
+
+    case Capital:
+    case Small:
+       {
+         { switchon Chkind into
+           { default:           // Not a character that is in
+                                //-- identifiers.
+               break
+
+             case Capital:
+             case Digit:
+             case Small:
+               if Vp ge Vmax break
+                                // Name too long.
+               Vp := Vp + 1; V|Vp := Ch
+                                // Store the character.
+               Rch(); Chkind := Kind(Ch)
+                                // Read the next one.
+            }
+          }
+         repeat
+         if Vp > NAMELENGTH do { CAEreport(2,,9); Vp := NAMELENGTH }
+
+// The identifier has been scanned.
+
+         let Name := vec NAMELENGTH/Bytesperword
+                                // A place for a packed name.
+         V|0 := Vp; Packstring(V, Name)
+                                // Pack the name there.
+         let T := DictionaryEntry(Name)
+                                // Look up the name in the dictionary.
+         if (~ SWcontrol) & rv T eq GET do
+                                           // The GET directive.
+         { let OldLI := LastItem; LastItem := 0
+                                // Don"t insert a SEMICOLON here.
+           Nextsymb()           // Read the file name.
+           unless Symb eq q2 STRINGCONST do CAEreport(-10,,91)
+           DoGet(V+1)           // Do the GET.
+           LastItem, NLPending := OldLI, true
+           Nextsymb()           // Read the first lexeme of the new
+                                //-- file.
+           return
+          }
+         if q2 rv T = RNAMECODE do { V|0:=T ; LexOut(rv T) ; return }
+         test q2 rv T > 0       // Is it a reserved word?
+         ifso LexOut(rv T)      // Yes, so output it.
+         ifnot { V|0 := T+1; LexOut(NAME) }
+                                // No, output a name.
+         return
+        }
+
+    default:                    // It"s nothing simple, so branch on
+                                //-- the character rather than the
+                                //-- type.
+   }
+
+  Chkind := Empty               // Mark the character as having been
+                                //-- used.
+  switchon Ch into
+  { case $#:                    // An octal number.
+              { let n := 0
+                Rch()
+              l:
+                while $0 le Ch le $7 do
+                { n := (n lshift 3) + (#17 & Ch); Rch()
+                 }
+
+// check for 8 or 9
+                if Ch=$8 \ Ch=$9 do { CAEreport(35) ; Ch:=$7 ; goto l}
+                V|0 := n; LexOut(NUMBER)
+                Chkind := Kind(Ch)
+                return
+               }
+
+    case ${:
+    case $[:
+    case $]:
+    case $}:
+              { let x := Ch     // Remember what it was.
+                and VV := vec BRACKETLABEL
+                { Rch()
+                  Chkind := Kind(Ch)
+                  unless Chkind ge Digit break
+                  Vp := Vp + 1
+                  if Vp > BRACKETLABEL do
+                  { CAEreport(2,,92); Vp := BRACKETLABEL; break
+                   }
+                  VV|Vp := Ch
+                 }
+                repeat
+                VV|0 := Vp; Packstring(VV, lv V|1)
+                                // Pack the label starting at V|1
+                V|0 := 1 + Vp/Bytesperword
+                                // Number of words in the packed label.
+                LexOut(((x eq ${)\(x=$[)) => SECTBRA, SECTKET)
+                return
+               }
+
+    case $.:  LexOut(DOT)
+              return
+
+    case $%:  Rch()
+              switchon Ch into
+              { default: CAEreport(93); goto Next
+
+                case $+: LexOut(FPLUS) ; return
+
+                case $-: LexOut(FMINUS) ; return
+
+                case $**:
+                         LexOut(FMULT) ; return
+
+                case $/: LexOut(FDIV) ; return
+
+                case $_: LexOut(FEQ) ; return
+
+                case $>: LexOut(FGR) ; return
+
+                case $<: LexOut(FLS) ; return
+               }
+
+    case $(:  LexOut(RBRA); return
+
+    case $):  LexOut(RKET); return
+
+    case $+:  LexOut(PLUS); return
+
+    case $,:  Rch()
+              test Ch eq $,
+              ifso LexOut(COMCOM)
+              ifnot { LexOut(COMMA); Chkind := Kind(Ch) }
+              return
+
+    case $;:  LexOut(SEMICOLON); return
+
+    case $&:  LexOut(LOGAND); return
+
+    case $\:  LexOut(LOGOR); return
+
+    case $=:  Rch()
+              unless Ch eq $> do
+              { LexOut(EQ); Chkind := Kind(Ch); return
+               }
+              LexOut(COND)
+              return
+
+    case $<:
+              { Rch()
+                test Ch eq $<
+                ifso LexOut(LEFTLUMP)
+                ifnot { LexOut(LS) ; Chkind:=Kind(Ch)}
+               }
+              return
+
+    case $>:
+              { Rch()
+                test Ch eq $>
+                ifso LexOut(RIGHTLUMP)
+                ifnot { LexOut(GR) ; Chkind:=Kind(Ch)}
+               }
+              return
+
+    case $_:  Rch()
+              LexOut(ASS); Chkind := Kind(Ch); return
+
+    case $~:  LexOut(NOT); return
+
+    case $**: LexOut(MULT) ; return
+
+    case $/:                    // Division or comment
+              Rch()
+              if Ch ne $/ do
+              { LexOut(DIV); Chkind := Kind(Ch); return
+               }                // Division.
+              Rch() repeatuntil Ch eq $*n \ Ch eq $*e
+                                // Skip a comment.
+              if Ch eq $*e goto EOF
+                                // End of file.
+
+    case #12: case $*n: case #14:	//end of line
+              Curline:=JRFPTR(INPUT)
+              NLPending := true
+              goto Next
+
+    case $!:
+    case $|:  LexOut(VECAP) ; return
+
+    case $-:  Rch()
+              unless Ch eq $> do
+              { LexOut(MINUS)
+                Chkind:=Kind(Ch)
+                return
+               }
+              LexOut(COND)
+              return
+
+    case $::  Rch()
+              if Ch eq $: do { DoControl(); Ch:=$*n ; goto L }
+                                // Control line.
+              if Ch=$= do { LexOut(ASS) ; return }
+              Chkind := Kind(Ch)
+              LexOut(COLON)
+              return
+
+    case $*^: LexOut( UPLUMP); return
+
+    case $':                    // ASCIZ quote
+    case $*":                   // String quote.
+    case $$:                    // Character constant.
+              { let Type := Ch  // Remember what it was.
+                and VV := vec StringMaxOb
+                                // A place to put the characters of the
+                                //-- string.
+                { Rch()
+                  if (Ch eq Type eq $*")\(Ch=Type=$') do
+                                                         // Just read
+                                                         //-- the end
+                                                         //-- of a
+                                                         //-- string.
+                  { VV|0 := Vp; Packstring(VV, V+1)
+                                // Pack the string into V.
+                    V|0 := 1 + Vp/Bytesperword
+                                // Number of words to store the string.
+                    LexOut((Ch=$')=>ASCIZCONST,STRINGCONST)
+                    return
+                   }
+                  if Vp > StringMaxOb \ Ch eq $*e do
+                  { CAEreport(95)
+                    V|0, V|1 := 1, "$$"|0
+                    LexOut(STRINGCONST)
+                    return
+                   }
+                  if Ch eq $*n do CAEreport(4,,90)
+                                  // Caution him that the string is
+                                  //-- long.
+                  if Ch eq $*^ do
+                  { Rch()
+                    if $a le Ch le $z do Ch:=Ch&#737
+                                         // force upper case here
+                    if $A le Ch le $_ do Ch:= Ch & #237
+                   }
+                  if Ch eq $**
+                  do
+                  { Rch()
+                    Ch := valof
+                    { if $A le Ch & Ch le $Z do Ch:=Ch+#40
+                                                // force lower case
+                                                //-- here
+                      switchon Ch into
+                      { default:
+                          resultis Ch
+
+                        case $t:
+                          resultis $*t
+
+                                // tab
+                        case $s:
+                          resultis $*s
+
+                                // space
+                        case $n:
+                          resultis $*n
+
+                                // new line
+                        case $b:
+                          resultis $*b
+
+                                // backspace
+                        case $p:
+                          resultis #14
+
+                                // new page (also read in)
+                        case $e:
+                          resultis #777
+
+                                // end of stream
+                        case $0:
+                        case $1:
+                        case $2:
+                        case $3:
+                                // Octal escape.
+                        case $4:
+                        case $5:
+                        case $6:
+                        case $7:
+                          { let t := Ch&7
+                            Rch()
+                            t := (t lshift 3) + (Ch&7)
+                            Rch()
+                            t := (t lshift 3) + (Ch&7)
+                            resultis t
+                           }
+                        case $f:
+                          resultis #14
+
+                                // form feed
+                        case $c:
+                          resultis #15
+
+                                // carriage return
+                        case $l:
+                          resultis #12
+
+                                // line feed
+                        case $v:
+                          resultis #13
+
+                                // vertical tab
+                        case $d:
+                          resultis 0
+
+                                // null character
+                        case $r:
+                          resultis #177
+
+                                // rubout
+                        case $a:
+                          resultis #100
+
+                                // @
+                        case $$:
+                          resultis $^[
+
+                                // altmode
+                       }
+                     }
+                   }
+
+                  Vp := Vp + 1; VV|Vp := Ch
+                                // Store the character.
+                  if Type eq $*" loop
+                                // Keep reading a string constant.
+                  if Type eq $' loop
+                                // Keep reading a string constant.
+                  V|0 := Ch; LexOut(CHARCONST)
+                  return
+                 }
+                repeat
+               }
+
+    case $^z: WriteS( "Input terminated by control-z*n")
+
+    case $*e:                   // End of a file.
+    EOF:      if GetP eq 1 do { LexOut(END); return }
+                                // No nested "get" files.
+              JNDRD(INPUT)
+              GetP := GetP - 1
+              INPUT := rh GetV|GetP
+              Curfile, Curline := lh GetV|GetP,JRFPTR(INPUT)
+              NLPending := true
+              goto Next
+
+    default:  CAEreport(2,,96)
+              WriteS("The character is *""); WriteChar(Ch)
+              WriteS("*" and has ascii code "); WriteOct(Ch)
+              WriteS(" octal*n")
+              goto Next
+
+   }
+ }
+
+// The parameter Item of the following routine contains a lexeme and
+//-- the data for insertion
+// of SEMICOLON or DO, packed like this...
+// q4 (0 => never, 1 => may, 2 => must) begin a command
+// q3 (0 => never, 1 => may, 2 => must) end a command
+// q2 the numeric lexeme itself.
+// Two kinds of processing are done...
+// 1. If last item may or must end a command and this item may begin a
+//-- command and a NEWLINE
+// has intervened between them, insert a SEMICOLON before this item.
+// 2. If last item may end a command and this one must begin one,
+//-- insert a DO before this one.
+
+and LexOut(Item) be             // Include canonic symbol Item in the
+                                //-- lexical stream.
+{ let t4,t3:=Item&(#14,,0),LastItem&(3,,0)
+  Symb := q2 Item               // The lexeme.
+  if t4>0 & t3>0 & (NLPending \ (t4=(#10,,0) & t3=(1,,0))) do
+  { ReadAhead, ExtraSymb := true, Symb
+    Symb := NLPending => q2 SEMICOLON, q2 DO
+   }
+  LastItem := Item              // Remember this item.
+  unless SWcontrol do NLPending := false
+ }
+
+and Kind(Ch) := selecton Ch into
+{ case $a to $z:  Small
+
+  case $A to $Z:  Capital
+
+  case $0 to $9:  Digit
+
+  case $*c:                     // cr. lf follows.
+
+  case $*s:
+  case $*t:
+  case 0:         Ignorable
+
+  default:        Simple
+ }
+
+and Numinp(v):=valof
+{ let v1:=vec 40
+  let v2:=vec 40
+  Packstring(v,v1)
+  StringToASCIZ(v1,v2)
+  v1|1:=(-1),,v2
+  unless JSYS(#232,v1)=2 do BCPLreport(9)
+                                // FLIN
+  resultis v1|2
+ }
+

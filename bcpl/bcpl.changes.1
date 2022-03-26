@@ -1,0 +1,372 @@
+6-JUL-74 16:55:23,1664
+Date:  2 JUL 1974 1655-EDT
+From: JMILLER
+Subject: New BCPL compiler version	
+
+                   BCPL Changes -- 7/5/74	
+                        Paul Rovner
+
+1.  New :: commands are "request",  "require",  and  "ifdebug"..   The
+   first  two  should  be  followed  by a list of the file names to be
+   treated as libraries and searched  (if  REQUEST)  or  automatically
+   loaded  with  this rel file (if REQUIRE).  File names may specify a
+   TENEX directory in the normal (<foo>) way.   The  "ifdebug"  pseudo
+   command will cause the rest of the source line to be ignored by the
+   compiler if the compilation is NOT done with the (new) /d  compiler
+   switch.   Otherwise,  (i.e.  if the /d switch is given) the line of
+   source code is compiled.  /d stands for "DEBUG", and allows a  user
+   to  specify  parts  of  his code which are for program development,
+   when efficiency is less important than getting the program to work.
+   Once  the  program works, these "extra" parts of the program may be
+   trimmed out of the production version by  just  not  using  the  /d
+   compiler switch.
+
+2.  More globals: Users may define global  numbers  between  #400  and
+   #1377
+
+3.  More names: Space for user defined names was increased.
+
+4.  New unary operator: "csize"
+   This is like "size", the operator that returns the number  of  bits
+   in  a structure.  The difference is that "csize" returns the number
+   of "address units" in a structure...on TENEX, that is the number of
+   machine  words.   "csize" is initially unreserved ; the "::reserve"
+   pseudo command is needed if you want to use "csize".  
+
+
+-------
+ 4-APR-75 01:39:29-EDT,283;000000000001
+Date:  4 APR 1975 0139-EDT
+From: JMILLER
+Subject: <SUBSYS>BCPL.SAV;40
+
+Fixed a bug in error printing routine caused by buffer overflow.
+Increased buffer (BF) to 200 words. Error reported by Daryle Lewis
+--Jim Miller (JMILLER@BBNA)
+P.S. -- Bug fix was in file NMAIN2
+-------
+10-APR-75 23:29:59-EDT,322;000000000001
+Date: 10 APR 1975 2329-EDT
+From: JMILLER
+Subject: [BBNA]<SUBSYS>BCPL.SAV;41, [BBNB][BBN][BBND]<BCPL>BCPL.SAV;41
+cc:   BCPL Group:
+
+This version of the compiler has expanded tables in CG, to help avoid
+the majority of the obscure errors created by table overflows.
+
+Problems to JMILLER@BBNA
+--Jim Miller
+-------
+16-JUN-75 16:02:29-EDT,252;000000000001
+Date: 16 JUN 1975 1602-EDT
+From: JMILLER
+Subject: BCPL version 42
+To:   ACTIVE-BCPL-GROUP:
+
+Contains expanded table of externals in CG. Available on <subsys>
+on system A, and on <bcpl> on other BBN systems.
+--Jim Miller (JMILLER@BBNA)
+-------
+19-JUN-75 12:01:58-EDT,788;000000000001
+Date: 19 JUN 1975 1201-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: BCPL.SAV;43
+From: JMILLER at BBN-TENEXA
+To: BCPL-Group:
+Message-ID: <[BBN-TENEXA]19-JUN-75 12:01:22-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPL.CHANGES;2
+
+
+New version on [bbna]<subsys>, and on <bcpl> at other BBN sites.
+Changes:
+1) Limit on number of cases in a switch extended from 150 to 500
+2) Errors 416 and 417 were added to CG to indicate an internal table
+   overflow which was not previously checked.
+3) CSIZE operator was fixed again (the bug fix got removed in version
+   42 by mistake).
+
+--Jim Miller
+
+PS -- Welcome to new users SU-DSL@ISI, and Andrew Hinchley and Sinan
+Yilmaz in London (KIRSTEIN@BBN(AJH, YS). A copy of this message has
+been sent to [bbna]<documentation>bcpl.changes.
+--Jim
+25-JUN-75 13:53:34-EDT,234;000000000001
+Date: 25 JUN 1975 1353-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: BCPL.SAV;44
+From: JMILLER at BBN-TENEXA
+Message-ID: <[BBN-TENEXA]25-JUN-75 13:53:30-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPL.CHANGES;2
+
+Changed %_ to %= operator.
+30-JUN-75 22:50:40-EDT,247;000000000001
+Date: 30 JUN 1975 2250-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: BCPL.SAV;45
+From: JMILLER at BBN-TENEXA
+Message-ID: <[BBN-TENEXA]30-JUN-75 22:50:39-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPL.CHANGES;2
+
+Re-load of ;44 due to loss of a change.
+28-JUL-75 13:11:09-EDT,448;000000000001
+Date: 28 JUL 1975 1310-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: BCPL.SAV;48
+From: JMILLER at BBN-TENEXA
+Message-ID: <[BBN-TENEXA]28-JUL-75 13:10:49-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPL.CHANGES;2
+
+Changes in TRN9 -- bug fix in Check to make error detection of
+structure field overlapping word boundary work; CG3 -- error
+in outtmp which caused an unchecked table overflow to occur was
+fixed (typographical error in original).
+-------
+4-SEP-75 14:37:30-EDT,4763;000000000001
+Date: 4 SEP 1975 1436-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: ANNOUNCING -- The New Improved BCPL Compiler
+From: JMILLER at BBN-TENEXA
+Message-ID: <[BBN-TENEXA]4-SEP-75 14:36:47-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPL.CHANGES;2,
+Fcc: <DOCUMENTATION>XBCPL.CHANGES;1
+
+
+	The new BCPL compiler is now usable.  It is on BBN systems A, B,
+C, and D on <SUBSYS>XBCPL.SAV.  Following is a list of features and
+idiosyncrasies.
+
+CCL
+===
+	To make the compiler easier to use, CCL has been changed so that
+it will run <SUBSYS>XBCPL.SAV when it encounters a source file with a
+.XBC extension.  .BCP extensions still force the old BCPL to be run.
+
+BDDT
+====
+	BDDT does not seem to work completely correctly with the .S
+files produced by XBCPL.  However, most things DO seem to work.  I
+have not tested it extensively, but the only thing I have seen wrong
+is that a "trace" command will not be able to list the argument
+names of a routine call.  When Jim Miller comes back, he will be
+able to fix this sort of stuff up.
+
+MACRO
+=====
+	Unfortunately, we have not yet implemented a .REL file
+generator, so the new compiler produces MACRO instead.  This will make
+your compilations somewhat slower.  In addition, the compiler produces a
+large number of temporary files:  3 or 4 for each source file,
+depending on whether you have specified a listing file or not ( the
+listing file is the MACRO output).  So if you are doing a number of
+compilations, you may run out of directory space if you don't do an
+"@expunge all" now and then.
+
+LOADER
+======
+	The default for LOADER seems to be that it will load local
+symbols.  For BCPL, this is usually just a waste, because the local
+symbols are just internal labels which are not useful for debugging
+unless you plan to use the MACRO output and IDDT.  So use the
+LOADER switch /W, which suppresses loading of local symbols, when you
+load your new .REL files.
+
+New features
+============
+	The new compiler has some new features which should make your
+work somewhat easier:
+
+"debugging"
+===========
+	The old compiler compiles source lines that start with
+"::ifdebug" if the /d switch is given.  XBCPL not only does this,
+but also sets the value of the reserved word "debugging" to true
+(it is normally false).  So you can say:
+	if debugging do { ... }
+and whatever is in the braces will be compiled only if you give /d
+to the compiler.
+
+"repval"
+========
+	Besides "repname", we now have "repval".  The difference is
+that "repname" re-computes the expression to be repeated each time
+it is repeated, whereas "repval" computes it only once.  Thus:
+	let a,b,c := foo(d) repname 3
+calls foo 3 times, whereas:
+	let a,b,c := foo(d) repval 3
+calls foo only once.
+
+"numbargs"
+==========
+	There now exists the new reserved word "numbargs" which performs
+the equivalent function of "NumbArgs()", except that the code is
+generated in line, which is much better. (It is only one instruction.)
+
+Symbols
+=======
+	Each symbol ( "+", ">>", "{", etc.) now has its equivalent
+name in the dictionary, except that it is unreserved.  However, by
+saying "::reserve <symbol name>", you may use the name, and
+also assign synonyms to it.  For example:
+	::reserve plus
+	::synonym become,ass
+	let Variable become A plus B // same as: let Variable := a+b
+
+"lhz", etc.
+===========
+	"lhz", "rhz", "q4z", "q3z", "q2z", and "q1z" may all now
+appear on the left side of an assignment statement.  They do what one
+would expect: store the right side of the assignment into the
+appropriate half- or quarter-word, zeroing the rest of the word.
+Thus:
+	lhz a := b
+is equivalent to:
+	a := b,,0
+
+Leftside function calls
+=======================
+	A function or routine call may now appear on the left side
+of an assignment statement.  The value of the right side of the
+statement is passed to the routine as an extra argument at the
+end of the argument list. Thus:
+	foo(a,b,c) := d+e
+is ALMOST equivalent to:
+	foo(a,b,c,d+e)
+I say "ALMOST" because "numbargs" will give you the number of actual
+arguments passed, and will not include the extra argument.  Thus
+on the first line above, "numbargs" would be 3, NOT 4.
+
+	You may determine if a routine was called from the left or
+the right side of an assignment statement by using the reserved
+word "leftside", which is true if it was a leftside call, and false
+otherwise.
+
+	The code the new compiler generates is considerably better
+than old BCPL, especially for structure references and conditional
+expressions.  Hopefully you will notice the difference in the core
+you use and in your run time.
+
+	Have fun!  Please send copies of gripes and comments to
+both Halbert@BBNA and JMiller@BBNA.
+--Dan Halbert
+-------
+2-Apr-76 10:42:20-EST,720;000000000001 !
+Date: 2 Apr 1976 1027-EST
+Sender: JMILLER at BBN-TENEXA
+Subject: <SUBSYS>BCPL.SAV;30010 (3.0.10)
+From: JMILLER at BBN-TENEXA
+To: BBNA-BCPL-Group:
+Cc: BBNB-C-D-BCPL-Group:   
+Message-ID: <[BBN-TENEXA]2-Apr-76 10:27:58-EST.JMILLER>   
+Fcc: <DOCUMENTATION>BCPL.CHANGES 
+
+     Several bug fixes:
+
+1) ::get now stores information form ::request and ::require
+
+2) Stack pointer was wrong for the case "let A := list ...  and B
+:=..."
+
+3) Only the first 6 characters of a string are changed  to  radix
+50 for the loader file name.
+
+4)  ::request and ::require will now accept numbers in file names
+correctly.
+
+
+--Jim Miller
+
+P.S. -- Available on systems other than BBNA as <BCPL>BCPL.SAV
+-------    
+21-Jul-76 15:17:25-EDT,1080;000000000000  !
+Date: 21 Jul 1976 1517-EDT
+Sender: HALBERT at BBN-TENEXA
+Subject: XBCPL 3.0.13
+From: HALBERT at BBN-TENEXA
+To: Johnson, Ulmer, Forsdick, Tomlinson, Plummer, Burchfiel, JMiller, Beeler, 
+To: Henderson, Dodds
+Cc: French, 
+Cc: Halbert
+Message-ID: <[BBN-TENEXA]21-Jul-76 15:17:17.HALBERT> 
+Fcc: <DOCUMENTATION>BCPL.CHANGES;2    
+
+
+A new version of XBCPL has been installed on [bbna]<subsys>.
+Changes:
+
+1. Fatal compilation errors are now no longer reported as
+compiler bug errors.
+
+2. An obscure bug found by Doug Dodds has been fixed.  It
+involved the compiler's free-storage management, and caused
+compilations to die with mysterious errors.
+
+3. Negative constants involved in addition or subtraction are no
+longer automatically changed to positive numbers (with the sense
+of the operation reversed) if such a change will not create an
+18-bit constant.  Rick Schwartz noticed this when trying to add
+#400000,,0 to something; it subtracted it and set the overflow
+flag, which bothers FORTRAN.
+
+Gripe to HALBERT, as I made the changes.
+
+--Dan
+-------
+ 3-AUG-76 11:50:48-PDT,1166;000000000001
+Date:  3 AUG 1976 1150-PDT
+From: LIEB
+Subject: New endblock statement
+
+A new feature has been added to BCPL. The commands "loop", "break", and
+"endcase" may be optionally followed by a name (conforming to the
+rules for variables). This name is taken to be that of a textually
+enclosing block (as specified with a name on the braces). The effect
+is the same as placing the same statement without the name would have
+been at the beginning of the named block. I.E.:
+
+{BlockA
+ ...
+ loop BlockA
+ break BlockA
+ endcase BlockA
+ ...
+}BlockA
+
+is equivalent to:
+
+{BlockA
+ goto L4
+L1: loop
+L2: break
+L3: endcase
+L4:
+...
+goto L1
+goto L2
+goto L3
+...
+}BlockA
+
+Also, a new command "endblock" has been added. It may optionally be
+followed by a name as above, the name of a textually enclosing block).
+It has the effect of performing a goto L statement where L immediately
+precedes the close-brace for the block. If the name is omitted
+it refers to the innermost enclosing block introduced by an open brace.
+Example:
+
+{BlockA
+ ...
+ endblock BlockA
+ ...
+}BlockA
+
+is equivalent to
+
+{BlockA
+ ...
+ goto L
+ ...
+L:
+}BlockA
+
+-------

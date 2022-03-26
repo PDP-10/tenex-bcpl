@@ -1,0 +1,104 @@
+
+
+
+
+
+The DO Sub-System
+
+
+   DO is a sub-system for  expanding  a  parameterized  text
+
+string  from a specified file, and passing the result to the
+
+EXEC for execution.  Parameters are indicated in the  source
+
+(text) file by a % character, followed either by 
+
+      1.  a digit, or
+
+      2.  a character other than % or  an  alphabetic  or  a
+
+digit,  followed  by an arbitrary text string not containing
+
+the character,  followed  by  the  second  instance  of  the
+
+character.
+
+
+   For each parameter, the user is asked  for  a  text  word
+
+(arbitrary   text   delimited  by  space,  tab,  or  cr)  to
+
+substitute for each instance of the parameter in  the  input
+
+text  string.  He is prompted for this word by the digit, if
+
+a parameter of type 1, or by the textstring, if a  parameter
+
+of  type  2.   Each uniquely named parameter is prompted for
+
+only once, even if it is used several  times  in  the  input
+
+text string.
+
+
+   The % character has two other uses:
+
+      1.  Two adjacent % characters expand  to  a  single  %
+
+character  (this is an escape convention for % characters in
+
+the expanded text string).  
+
+      2.  A % character followed by an alphabetic  character
+
+form   a  unit  which  expands  into  a  particular  string,
+
+depending on the alphabetic character, as follows:
+
+
+                                                    Page   2
+
+
+
+         %C => name  of  directory  to  which  this  job  is
+
+connected
+
+         %D => date and time
+
+         %J => job number for this job
+
+         %L => name of directory under which this job logged
+
+in
+
+         %R =>  milliseconds of run time used by this job so
+
+far
+
+         %T => (octal) number of TTY attached to this job
+
+
+   The DO program expands  the  parameterized  input  string
+
+into  a  temporary  text  file,  then  makes  this  file the
+
+"PRIMARY INPUT FILE" (in place of the TTY) for the EXEC in a
+
+lower fork.
+
+
+   DO is designed to allow user type-ahead while it  or  the
+
+lower   EXEC  is  running,  and  to  allow  interruption  by
+
+control-c ,  and  subsequent  resumption  via  the  CONTINUE
+
+command.   The  DO  program  terminates  with a message when
+
+either the lower fork terminates, or the end-of-file is read
+
+in its primary input file.
+
+

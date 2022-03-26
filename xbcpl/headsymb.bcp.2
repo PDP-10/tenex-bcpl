@@ -1,0 +1,105 @@
+
+// Description of the BCPL Symbol Table.
+// Last modified on Fri 14 Apr 72 1637.39 by   AE.
+
+manifest
+{ SymbVersion  := 3
+ }                              // Symbol table version id.
+
+structure
+{ SThead                        // Symbol table header.
+  { Length byte 2               // Pointer to last used register of
+                                //-- this file.
+    Version byte 2              // What sort of symbol table is it?
+    Date word                   // Creation date of the symbol table.
+    FDN byte 2                  // Source file descriptor length.
+    FDB byte 2                  // Source file descriptor base.
+    SDN byte 2                  // Symbol descriptor length.
+    SDB byte 2                  // Symbol descriptor base.
+    NameN byte 2                // Symbol names length.
+    NameB byte 2                // Symbol names base.
+    StructN byte 2              // Structure descriptors length.
+    StructB byte 2              // Structure descriptors base.
+    ComN byte 2                 // Command descriptors length.
+    ComB byte 2                 // Command descriptors base.
+    SlashUSW word               // /U switch was used
+   }
+
+// Structure definitions for symbol table descriptors.
+
+  STsd                          // Symbol descriptor, word 1.
+  { Type bit 4                  // The type of symbol.
+    Data bit 7                  // Datum associated with the symbol --
+                                //-- static and small values only.
+    overlay SmallLocal bitn 7
+    Name bit 12                 // Points to BCPL string that is the
+                                //-- symbol name, wrt symbol block.
+    ILCA bit 13                 // Offset in block A where symbol
+                                //-- starts its scope.
+
+    SType bit 9                 // Variable, routine, function or
+                                //-- label.
+    Args bit 9                  // For function or routine, number of
+                                //-- arguments.
+    bit 5
+    ILCB bit 13                 // Offset in block B where item is
+                                //-- stored.
+   }
+
+  STcdYYYYc                     // Command descriptor -- start command.
+  { Type bit 1                  // 0, for command descriptor.
+    SFD bit 4                   // Source file descriptor.
+    ILCA bit 13                 // Block A location of the command.
+    Word bit 18                 // Byte # in the source file.
+   }
+
+  STcdYYYYs                     // Command descriptor -- change stack
+                                //-- offset.
+  { Type bit 1                  // 1, for a CDs
+    bit 4
+    ILCA bit 13                 // Block A location of command.
+    bit 1
+    Offset bit 17               // New stack offset.
+   }
+ }
+
+manifest                        // Types for symbol descriptors.
+{ STmanifestYYYYbig  := 0       // Manifest constant, value too big.
+  STlocalYYYYbig  :=    1       // Local with large stack offset.
+  STglobalYYYYbig  :=   2       // Global, with offset too big for
+                                //-- field.
+  STstatic  :=          4       // Static.
+  STstructure  :=       5       // Structure.
+  STmanifest  :=        8       // Manifest constant.
+  STlocal  :=           9       // Local with small stack offset.
+  STglobal  :=          10      // Global, small value.
+  STparam  :=           12      // Formal parameter of a function or
+                                //-- routine.
+  STindex  :=           13      // Index register.
+  STsectket  :=         14      // End of a section.
+  STfill  :=            15      // For unused words.
+
+// Sub-types for static data items.
+
+  STstaticYYYYvar  :=   0       // Static variable.
+  STstaticYYYYfunction  :=
+                        1       // A static which is a function.
+  STstaticYYYYroutine  :=
+                        2       // A static which is a routine.
+  STstaticYYYYlabel  := 3       // A static which is a label.
+
+// Types for the command block.
+
+  STcdYYYYcommand  :=   0       // Command descriptor -- command start.
+  STcdYYYYstack  :=     1       // Command descriptor -- stack change.
+ }
+
+manifest
+{ STYYYYMaxDatum  :=
+    (1 lshift size STsd.Data) - 1
+                                // Max datum in SD1.Data field.
+  STYYYYSymbHeaderN  :=
+    (size SThead) / Bitsperword // Length of symbol table header, in
+                                //-- words.
+ }
+

@@ -1,0 +1,135 @@
+
+get "headfmt.bcp"
+
+let FinishLine(LastFold) be
+{
+  { FlushTrailingBlanks()
+    let NCh _ Line|0
+    and NSpace _ Indent
+    if (BlankLine & BLANKBEFORE) ne 0 then
+    { BlankLine _ BlankLine & ~BLANKBEFORE \ HADBLANK
+      WriteS(OutFile, "*c*l")
+      OutputLines _ OutputLines + 1
+      OutputTotal _ OutputTotal + 1
+    }
+    test NCh > 0
+    ifnot test (BlankLine & HADBLANK) ne 0
+          ifso return
+          ifnot BlankLine _ BlankLine\HADBLANK
+    ifso
+    { test NumbArgs() > 0 & NCh + NSpace > MaxColumn & rv LastFold ne 0
+      ifso { FoldLine(LastFold); loop }
+      ifnot Indent _ LeftMargin
+      for i _ 1 to NSpace do Writech(OutFile, $*s)
+      for i _ 1 to NCh do Writech(OutFile, Line|i)
+      BlankLine _ BlankLine & ~HADBLANK
+      if (BlankLine & BLANKAFTER) ne 0
+      then BlankLine _ (BlankLine & ~BLANKAFTER) \ BLANKBEFORE
+    }
+    WriteS(OutFile, "*c*l")
+    if OneLineFlag then Backup(0)
+    if NCh + NSpace > MaxColumn &
+       (TotalShortening > NCh + NSpace - MaxColumn \
+        MinFold ge MAXPRE)
+   then Backup(NCh + NSpace - MaxColumn)
+    LastLabel _ 0
+    Line|0 _ 0
+    StartSyllable _ true
+    OutputLines _ OutputLines + 1
+    OutputTotal _ OutputTotal + 1
+  }
+  repeatwhile Line|0 > 0
+}
+
+and FoldLine(LastFold) be
+{ if rv LastFold = 0 then return
+  let x _ Line|0
+  and y _ lhz rv LastFold       // Characters before fold
+  and NewIndent _ rhz rv LastFold
+  Line|0 _ y                    // Shorten the line
+  FinishLine()                  // Output first part
+  for i _ y+1 to x              // For remainder of characters
+  do Line|(i-y) _ Line|i        // Copy to beginning of line buffer
+  Line|0 _ x-y                  // Number of characters left in the
+                                //-- line
+  rv LastFold _ 0
+  Indent _ NewIndent
+}
+
+and FlushTrailingBlanks() be
+{ until Line|0 < 1 \ (Line|(Line|0) ne $*s & Line|(Line|0) ne $;+#400)
+  do Line|0 _ Line|0 - 1
+}
+
+and FlushBlanks() be
+{ let SCh _ Ch
+  Getch()
+  repeatuntil Ch ne $*s
+  ReturnCh(1)
+  Ch _ SCh
+}
+
+and Addch(Ch) be
+{ if Ch > #777 then { Addch(Ch rshift 9); Ch _ Ch & #777}
+  if Line|0 ge MAXLINE then
+  { FinishLine()
+    WriteS(OUTPUT, "Line too long...it will be split")
+  }
+  Line|0 _ Line|0 + 1
+  Line|(Line|0) _ Ch
+}
+
+and Getch() _ valof
+{ if ScnPtr < TopPtr then
+  { Ch _ ChBuffer|(ScnPtr rem CHBUFSIZ)
+    ScnPtr _ ScnPtr + 1
+    resultis Ch
+  }
+  Readch(InFile, lv Ch)
+  if EofFlg then
+  { EofCount _ EofCount + 1
+    Ch _ $*e
+    if EofCount > 20 then
+    { WriteS(OUTPUT, "Premature end of file*n")
+      FinishLine()
+      CLOSF(OutFile, #400000)
+      let Jvec _ vec 15
+      and FileLength _ rfptr(OutFile)
+      Jvec|1 _10,, OutFile
+      Jvec|2 _ -1
+      Jvec|3 _ FileLength
+      JSYS(#64, Jvec)
+      JSYS(#147)
+      finish
+    }
+  }
+  switchon Ch into
+  { case $*l: Ch _ $*n
+              endcase
+
+    case $*c:
+    case $*t: Ch _ $*s
+  }
+  ChBuffer|(TopPtr rem CHBUFSIZ) _ Ch
+  TopPtr _ TopPtr + 1
+  ScnPtr _ ScnPtr + 1
+  if TopPtr > BotPtr+CHBUFSIZ then BotPtr _ TopPtr - CHBUFSIZ
+  resultis Ch
+}
+
+and ReadInputPointer() _ rfptr(InFile) + ScnPtr - TopPtr
+
+and ResetInputFile(Position) be
+{ sfptr(InFile, Position)
+  TopPtr, ScnPtr, BotPtr _ 0, 0, 0
+}
+
+and ReturnCh(N) be
+{ if N > ScnPtr-BotPtr then
+  { sfptr(InFile, rfptr(InFile) - N + ScnPtr - TopPtr)
+    ScnPtr, BotPtr, TopPtr _ 0, 0, 0
+    return
+  }
+  ScnPtr _ ScnPtr - N
+}
+

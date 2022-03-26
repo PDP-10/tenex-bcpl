@@ -1,0 +1,51 @@
+
+get "headfmt.bcp"
+
+let Space(N) be
+{ for i _ 1 to N do Addch($*s)
+}
+
+and Match(String) _ valof
+{ let Nch _ 1
+  for i _ 1 to String>>STRING.N do
+  { Getch()
+    Nch _ Nch + 1
+    if Ch ne String>>STRING.C^i then goto Fail
+  }
+  Getch()
+  Nch _ Nch + 1
+  StartSyllable _ false
+  unless SymbolConstituent(Ch) do
+  { ReturnCh(1)
+    resultis true
+  }
+Fail:
+  ReturnCh(Nch)
+  Getch()
+  resultis false
+}
+
+and Append(String) be
+{ for i _ 1 to String>>STRING.N do Addch(String>>STRING.C^i)
+}
+
+and SkipEOL() be
+{ FlushBlanks()
+  Getch()
+  unless Ch = $*n do ReturnCh(1)
+  FlushBlanks()
+}
+
+and IfBrace() _ valof
+{ let SIP _ ReadInputPointer()
+  FlushBlanks()
+  if Getch() = ${ then { ReturnCh(1); resultis true}
+  ReturnCh(ReadInputPointer() - SIP)
+  resultis false
+}
+
+and IfComment() _ valof
+{ unless Getch() = $/ do { ReturnCh(1); resultis false}
+  unless Getch() = $/ do { ReturnCh(2); resultis false}
+  resultis true
+}

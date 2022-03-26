@@ -1,0 +1,277 @@
+
+// <BCPL>UTIL.BCP;5    12-JUN-73 21:53:35 EDIT BY WOLF
+// fixed Level()
+// <BCPL>UTIL.BCP;2    24-MAY-73 09:50:59 EDIT BY ROVNER
+// I removed StackTrace from this pkg to solve a library order pb.
+// <WOLF>UTIL.BCP;13    21-MAY-73 10:05:11 EDIT BY WOLF
+// max,min,Level,Longjump,Dimension,sub,ArrayCheck
+
+// util.bcp
+// a package of useful utility  BCPL subroutines
+// rovner, 11/24/72
+
+get "<BCPL>HEAD"
+get "<BCPL>UTILHEAD"
+
+let IsCharInput(stream)_valof
+{ let v_vec 20
+  if NumbArgs()=0 do stream_INPUT
+  v|1_stream
+  resultis JSYS(#102,v)=1       // SIBE
+ }
+
+and Wait(nms) be
+{ if NumbArgs()=0 do { JSYS(#306) ; return }	//WAIT
+  let v_vec 20
+  v|1_nms
+  JSYS(#167,v)                  // DISMS
+ }
+
+and EchoMode(onbool) be
+{ let v_vec 20
+  v|1_#100
+  JSYS(#107,v)                  // RFMOD
+  v|2_(v|2&(-1,,#771777))\(onbool=>#4000,0)
+  JSYS(#110,v)                  // SFMOD
+
+ }
+
+and ReadWord(instream,s,lchlv,skipbool,termstring)_valof
+{ manifest
+  { wordsize _ 100
+   }
+  let v_vec wordsize
+  let nargs_NumbArgs()
+  if nargs<4 then skipbool_true
+  if nargs=1 do { s_instream ; instream_INPUT}
+  if (lh s)<0 do v_rhz s
+  let tvec_vec 20
+  let usualterms_nargs ne 5
+  unless usualterms do Unpackstring(termstring,tvec)
+  let ch_nil
+  v|0_0
+  {
+    { Readch(instream,lv ch)
+      let isterm_usualterms => IsTerminator(ch),valof
+      { for i_1 to tvec|0 do if tvec|i=ch do resultis true
+        resultis false}
+      if skipbool&(v|0=0)&isterm do loop   //skip initial terminators
+      if isterm\EofFlg do break
+      switchon ch into
+      { case $^a:  test v|0>0
+                   ifso
+                   { Writech(#101,$\)
+                     Writech(#101,v|(v|0))
+                     v|0_v|0-1
+                    }
+                   ifnot Writech(#101,7)	// bell
+                   endcase
+
+        case $^q:  v|0_0
+		   WriteS(#101,"##*n")
+                   endcase
+
+        case $^r:  Writech(#101,$*n)
+                   for i_1 to v|0 do Writech(#101,v|i)
+                   endcase
+
+        default:   v|0_v|0+1
+                   if v|0>wordsize do
+                   { Help("ReadWord buffer overflow*n")
+                     v|0_v|0-1
+                    }
+                   v|(v|0)_ch
+       }
+     } repeat
+   } repeatuntil (v|0 > 0) \ ~skipbool \EofFlg
+  unless (lh s)<0 do Packstring(v,s)
+  if nargs ge 3 do rv lchlv_ch
+  resultis rhz s
+ }
+
+and IsTerminator(ch)_(ch=$*s)\(ch=$*t)\(ch=$*c)\(ch=$*l)\(ch=$*n)
+
+and Eqstr(s1,s2)_valof
+{ for i_0 to (q4 s1|0)/4-1
+  do unless s1|i=s2|i do resultis false
+  let Mask _ -1 lshift 9*(3-(q4 s1|0) rem 4)
+  let i _ (q4 s1|0)/4
+  unless ((s1|i)&Mask)=((s2|i)&Mask) do resultis false
+  resultis true
+ }
+
+// this subroutine converts the indicated text string into a
+//-- number...leading
+                                // spaces or tabs are NOT allowed. the
+                                //-- string may be prefixed by a -
+                                //-- character or a #
+                                // character or by both. the -
+                                //-- character means negative, and the
+                                //-- # character means octal (default
+                                //-- case is decimal).
+and TxtToInt(v)_valof
+{ let bm,rx,j_false,10,0
+  let w_vec 30
+  test (lh v)<0 then w_rh v
+  or Unpackstring(v,w)
+  if w|1 eq $- do
+  { bm_true
+    w|1_w|0-1
+    w_w+1
+   }
+  if w|1 eq $# do
+  { rx_8
+    w|1_w|0-1
+    w_w+1
+   }
+  if ~bm & (w|1 eq $-) do
+  { bm_true
+    w|1_w|0-1
+    w_w+1
+   }
+  test rx=8 do for i _ 1 to w|0 do j _ (j lshift 3) + (#17 & (w|i))
+  or for i_1 to w|0 do j_j*10+(#17 & w|i)
+  resultis bm=>-j,j
+ }
+
+and ReadN(instream)_valof
+{ let v_vec 100
+  if NumbArgs()=0 do instream_INPUT
+  ReadWord(instream,-1,,v)
+  for i_1 to v|0
+  do if v|i=$. do
+     { let v1_vec 40
+       let v2_vec 40
+       Packstring(v,v1)
+       StringToASCIZ(v1,v2)
+       v1|1_(-1),,v2
+       unless JSYS(#232,v1)=2 do
+                                 // FLIN
+       Help("BCPL: FLIN JSYS failed in ReadN*n")
+       resultis v1|2
+      }
+  resultis TxtToInt(-1,,v)
+ }
+
+and MakeDate(v,d)_valof
+{ let w_vec 20
+  let ww_vec 100
+  let vv_vec 20
+  let p_POINT(7,w,-1)
+  vv|1_-1,,w
+  vv|2_((NumbArgs()=1)\d=0)=>-1,d
+  vv|3_-1
+  JSYS(#220,vv)                 // ODTIM
+  ww|0_0
+  { let b_ILDB(lv p)
+    if b=0 do break
+    ww|0_ww|0+1
+    ww|(ww|0)_b
+   }
+  repeat
+  Packstring(ww,v)
+  resultis v
+ }
+
+and Date()_valof
+{ let v_vec 20
+  JSYS(#227,v)                  // GTAD
+  resultis v|1
+ }
+
+and max(arg1,nil repname 30)_valof
+{ let arg_(lv arg1)-1
+  let mx_arg1>arg|2 => arg1,arg|2
+  for i_3 to NumbArgs()
+  do if arg|i>mx do mx_arg|i
+  resultis mx
+ }
+
+and min(arg1,nil repname 30)_valof
+{ let arg_(lv arg1)-1
+  let mn_arg1<arg|2 => arg1,arg|2
+  for i_3 to NumbArgs()
+  do if arg|i<mn do mn_arg|i
+  resultis mn
+ }
+
+and Level(x)_valof
+{ let sp_lv(x)-2                // sp=contents of stackptr, which is
+                                //-- pointing
+                                // to the return from Level()
+  resultis (rv(#17)),,(sp-rhz(rv(rv(sp))))   // rhz(rv(rv(sp)) is the delta-stackptr
+
+                                // to where it was before Level()
+                                // was called
+ }
+
+and LongJump(label,level) be
+{ static
+  { foo: nil
+   }                            // set the stackptr to level, then go
+                                //-- to label
+  foo_label
+  rv(#16)_rhz level
+rv(#17)_lhz level
+  goto foo
+ }
+
+static
+{ ArrayCheck: false
+ }
+
+let Dimension(dopevec,nil repname 20) be
+{ let ndims_NumbArgs()/2        // number of dimensions
+  let check_dopevec < 0
+  if check do dopevec_-dopevec
+  dopevec|0_(check => -ndims,ndims)
+                                // dopevec|0=-ndims if array check
+  let min_lv dopevec
+  let max_min+1
+  dopevec|1_min|1
+  dopevec|2_1
+  for i_3 to 2*(ndims+1) by 2 do
+  { dopevec|i_min|i
+    dopevec|(i+1)_dopevec|(i-1)*(max|(i-2)-min|(i-2)+1)
+   }
+ }
+
+and sub(dopevec,nil repname 10)_valof
+{ let subscript_lv dopevec
+  let ndims_(dopevec|0 < 0 => -dopevec|0,dopevec|0)
+  if ArrayCheck\(dopevec|0 < 0)
+  do for i_1 to ndims do
+     { let max_(dopevec|(2*i+2)/dopevec|(2*i))+dopevec|(2*i-1)-1
+       if dopevec|(2*i-1) le subscript|i le max do loop
+       Help("*nArray bound error - fatal*n")
+      }
+  let elem_0
+  for i_1 to ndims
+  do elem_elem+(subscript|i-dopevec|(2*i-1))*dopevec|(2*i)
+  resultis elem
+ }
+
+and PadString(String) be
+{ let X _ q4z String|0
+  let Mask _ selecton X rem 4 into
+    { case 0: #777000000000
+      case 1: #777777000000
+      case 2: #777777777000
+      case 3: #777777777777
+    }
+  String|(X/4) _ (String|(X/4))&Mask
+}
+
+//routine proposed for util.bcp
+//Make a global definition for it!
+
+//Set a block of registers to 0 or some value
+//  blk = lv of 1st word of the block
+//  siz = number of registers to be set
+//  value = value to be used (optional, 0 if absent)
+
+and setblk(blk,siz,value) be
+{ blk|0:=(NumbArgs()=3 => value,0)
+  if siz le 1 do return
+  blt(blk,blk+1,blk+siz-1)
+}

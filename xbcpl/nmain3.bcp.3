@@ -1,0 +1,371 @@
+
+// The BCPL Compiler -- Main3 --  Routines for creation of the symbol
+//-- table.
+
+// SymtabInit  Initialize symbol table, store source file information.
+// SymtabStoreSymbol Store a symbol descriptor, returning its offset.
+// SymtabNextN  Return next symbol table location to be assigned.
+// SymtabStoreEnd  Store block end info into symbol block.
+// SymtabStoreArgs  Store number of arguments for a function or
+//-- routine.
+// SymtabTransEnd  Create symbol name block, structure block.
+// SymtabStoreILC  Store instruction counter data for a symbol.
+// SymtabStoreCommand Store command start information in the command
+//-- block.
+// SymtabStoreStack Store stack change data in the command block.
+// SymtabFinish  Finish the symbol table and close the file.
+// *Chain   Chain names together for name block.
+// *Store   Store an item into the symbol table, stepping N.
+// *Copy   Copy a structure definition table.
+// *MakeEven  Store a fill word if necessary to cause N to be even.
+// * local to this file.
+
+get "<bcpl>head"
+get "<BCPL>utilhead"
+get "<XBCPL>headbcpl"           // Compiler declarations.
+get "<XBCPL>headsymb"           // Structure and manifest declarations
+                                //-- describing the symbol table.
+
+//local statics
+static
+{ S:          -1                // Address of the base of the symbol
+                                //-- table.
+  N:          nil               // Next free location in the block
+                                //-- currently being created.
+  B:          nil               // Base of the block currently being
+                                //-- created.
+  SDB:        nil               // Base of the symbol descriptor block.
+  BookEnd:    nil               // Last address of the book used for
+                                //-- the symbol table.
+  NameChain:  0                 // Head of the chain of names through
+                                //-- the dictionary.
+  LastName:   nil               // Address of the last name in the name
+                                //-- chain.
+  NextName:   0                 // Next free name location in the name
+                                //-- block.
+  FillWord:   0                 // Used for fill to even word in symbol
+                                //-- descriptor block.
+ }
+
+structure
+{ NC                            // Name chain words in the dictionary.
+  { s bitb                      // true implies name already chained.
+    c bit 17                    // Address of the next entry in the
+                                //-- chain.
+    n bit 5                     // Number of words in this name (less
+                                //-- 1).
+    f bit 13                    // Offset of name wrt NameB.
+   }
+ }
+
+manifest { SYMTABSTART_#240000}
+let SymtabInit(slu) be          // Create the symbol table and store
+                                //-- file names into it.
+{ S := SYMTABSTART              // The zero-th location of the symbol
+                                //-- table.
+  NameChain:=0
+  NextName:=0
+  FillWord:=0
+  BookEnd := S + #17777         // Last location in the book.
+  LastName := lv NameChain      // Pointer to last name in the name
+                                //-- chain.
+
+  N := S + STYYYYSymbHeaderN    // Skip over symbol table header.
+  for k := S to N-1 do rv k := 0
+                                // Initialize the symbol table header.
+
+  S >> SThead.Version := SymbVersion
+                                // The sort of symbol table described
+                                //-- by the declaration used.
+  S >> SThead.Date := Date()    // Creation date of the symbol table.
+
+  S >> SThead.FDB := N - S      // Base of the source file descriptor
+                                //-- block.
+  S >> SThead.FDN := GetnameP   // Length of the source file descriptor
+                                //-- block.
+  S>>SThead.SlashUSW:=slu
+  B := N                        // Base of the next block.
+
+  for k := 0 to GetnameP-1 do   // Look at all source files used.
+  { let x := GetnameV|k
+    Store( Chain(rh x) )
+   }
+  MakeEven()                    // Skip to an even location.
+  B := N                        // Base of the next block.
+  SDB := B - S                  // Base of the symbol descriptor block.
+
+  if SWbits << SW.Debug do
+  { WriteS("Symbol table starts at "); WriteOct(S); PBOUT($*n)
+   }
+
+  FillWord << STsd.Type := STfill
+ }
+
+and SymtabStoreSymbol(Name, Type, Datum) := valof
+                                // Store a symbol descriptor in the
+                                //-- symbol block.
+{ let v := list 0,
+                Datum           // The two words of the entry.
+  and Big := nil
+  test Type=STlocal\Type=STparam
+  ifso
+  { let Size := (1 lshift (size STsd.Data-1))-1
+    Big := (Datum<-Size) \ (Datum>Size)
+    v >> STsd.SmallLocal := Datum
+   }
+  ifnot
+  { Big := (Datum < 0) \ (Datum > STYYYYMaxDatum)
+    v>>STsd.Data := Datum
+   }
+
+  switchon Type into            // What sort of symbol is being
+                                //-- created?
+  { default:          BCPLreport(-1)
+                                // This shouldn"t happen.
+                      resultis 0
+
+    case STmanifest:            // A manifest constant.
+                      unless SWbits << SW.SymtabLong resultis -1
+                      if Big do Type := STmanifestYYYYbig
+                      endcase
+
+    case STlocal:     if Big do Type := STlocalYYYYbig
+                      endcase
+
+    case STstructure: unless SWbits << SW.SymtabLong resultis -1
+                      Big := true
+                                // This is always a two word item.
+                      endcase
+
+    case STglobal:    if Big do Type := STglobalYYYYbig
+                      endcase
+
+    case STparam:               // Formal parameter of a subroutine.
+    case STindex:     Big := false
+                      endcase
+
+    case STstatic:    Big := true
+                      v >> STsd.Data := rh Datum => 1, 0
+                      v|1 := 0  // Clear the whole of the second word.
+                      v >> STsd.SType := lh Datum
+   }
+  v >> STsd.Type := Type
+  if Big & Type ne STstatic do v >> STsd.Data := 0
+
+// Now store the new entry.
+
+  if Big do MakeEven(FillWord)  // Two word entries must start at an
+                                //-- even address.
+  v >> STsd.Name := Chain(H2|Name)
+                                // Enter the name into the name table.
+  let n := N - S                // The offset where the entry goes, to
+                                //-- be returned to the caller.
+  if n eq 0 do n := 0           // -0 is a bore.
+  Store(v|0); if Big do Store(v|1)
+                                // Store the entry.
+  resultis n
+ }
+
+and SymtabNextN() := N - S      // Return next free location in the
+                                //-- symbol table, for STsectket.
+
+and SymtabStoreEnd(SE) := valof // Store a section end in the symbol
+                                //-- descriptor block.
+{ let n := N - S; if n eq 0 do n := 0
+  let t := 0
+  t << STsd.Type := STsectket
+  let Begin := SE - SDB; if Begin eq 0 do Begin := 0
+  t << STsd.Name := Begin
+  if t eq rv(N-1) resultis -1   // 2 adjacent entries identical.
+  Store(t)
+  resultis n
+ }
+
+and SymtabStoreArgs(Offset, Args) be
+                                // Store the number of arguments of a
+                                //-- function or routine.
+(lv S|Offset) >> STsd.Args := Args eq 0 => 0, Args
+                                // -0 is a bore.
+
+and SymtabTransEnd() be         // Create symbol names block and
+                                //-- structure block.
+{ MakeEven(FillWord)            // Length of symbol descriptor block
+                                //-- must be even.
+
+  let SDN := N - B              // Length of the symbol descriptor
+                                //-- block.
+  S >> SThead.SDB := SDB
+  S >> SThead.SDN := SDN
+  B := N                        // Base of the next block.
+
+// Scan through the symbol descriptor block processing structure
+  //-- descriptors.
+  for n := SDB step 2 to SDB + SDN - 2 do
+                                          // Even locations only.
+  { unless S|n << STsd.Type eq STstructure do loop
+
+// Process only structure descriptors.
+
+    let SDT := S|(n+1)          // The address of the structure
+                                //-- definition table as stored in the
+                                //-- AE-tree.
+    let k := N - B; if k eq 0 do k := 0
+                                 // Offset in the structure block where
+                                 //-- the table will go.
+    S|(n+1) := k                // Store it.
+    Copy(SDT)                   // And finally, copy the table.
+   }
+
+  let StructN := N - B; if StructN eq 0 do StructN := 0
+                                           // Length of structure
+                                           //-- block.
+  S >> SThead.StructB := B - S  // Base of the structure block.
+  S >> SThead.StructN := StructN
+                                // Its length.
+  MakeEven(0)                   // Start the next table on an even
+                                //-- word.  (Why??)
+  B := N                        // The base of the next table.
+
+// Copy the names into the name block, following the name chain through
+  //-- the dictionary.
+
+  let DE := NameChain << NC.c   // Address of the first name.
+  until DE eq 0 do
+  { for k := 1 to DE >> NC.n + 1 do Store(DE|k)
+                                    // Copy the name.
+    let OldDE := rv DE          // Save the old pointer.
+    rv DE := 1                  // Restore the dictionary entry.
+    DE := OldDE << NC.c         // Follow the chain.
+   }
+  unless N-B eq NextName do
+  { BCPLreport(-1)
+    Help("HELP!!! Trouble with Symbol Table. Help call in Main3")
+   }                            // IMPOSSIBLE
+
+  S >> SThead.NameB := B - S    // Base of the name block.
+  S >> SThead.NameN := N - B    // Length of the name block.
+  B := N
+ }
+
+and SymtabStoreILC(Offset, A, B) be
+                                // Store blocka and blockb locations
+                                //-- needed.
+{ let P := S + Offset
+  P >> STsd.ILCA := A           // Block A location of the beginning of
+                                //-- the scope of the symbol.
+  if P >> STsd.Type eq STstatic do P >> STsd.ILCB := B
+ }
+
+and SymtabStoreCommand(Line, A) be
+{ structure
+  { LineD                       // Descriptor of the datum in a LINE
+                                //-- node in the tree.
+    { bit 14
+      SFD bit 4                 // Source file descriptor.  (Index in
+                                //-- SFD.)
+      Word bit 18               // Byte # in the source file.
+     }
+   }
+
+  let t := 0                    // Create the entry here.
+  t << STcdYYYYc.Type := STcdYYYYcommand
+  t << STcdYYYYc.SFD := Line << LineD.SFD
+                                // Offset of source file descriptor in
+                                //-- SFD block.
+  t << STcdYYYYc.Word := Line << LineD.Word
+                                // Byte # in the source file...
+  t << STcdYYYYc.ILCA := A      // Location in blocka where we enter
+                                //-- command.
+  Store(t)
+ }
+
+and SymtabStoreStack(Offset, ILCA) be
+{ let t := 0                    // Build the entry here.
+  t << STcdYYYYs.Type := STcdYYYYstack
+  t << STcdYYYYs.Offset := Offset
+  t << STcdYYYYs.ILCA := ILCA
+  Store(t)
+ }
+
+and SymtabFinish(stn) be        // Close out the symbol table.
+{                               // Declarations of manifests for file
+                                //-- types, etc.
+
+  if S < 0 return               // The file was never opened.
+
+  S >> SThead.ComB := B - S     // Base of the command descriptor
+                                //-- block.
+  S >> SThead.ComN := N - B     // Its length.
+  S >> SThead.Length := N - S   // Length of the symbol table.
+
+  if SWbits << SW.Debug do
+  { WriteS("Symbol table is "); WriteOct(N - S)
+    WriteS(" words long.*n")
+   }
+
+  manifest
+  { PageSize  := 512
+   }                            // Clear to the next page boundary.
+  until (N & (PageSize-1)) eq 0 do Store(0)
+
+  { let t:=OUTPUT
+    OUTPUT:=CreateOutput(stn,36)
+    for i:=0 to N-1-S do PBOUT(S|i)
+    EndWrite(OUTPUT)
+    OUTPUT:=t
+   }
+
+ }
+
+and Chain(Name) := valof        // Name is a word in the dictionary.
+                                //-- Return its offset wrt NameB.
+{ let DE := Name - 1            // The dictionary entry for the name.
+  if DE >> NC.s do resultis DE >> NC.f
+
+                                // Name already in NameB.
+
+  let n := Name>>String.n / Bytesperword
+                                // Number of words in the name, less 1.
+  and f := NextName             // Current offset wrt NameB.
+  NextName := NextName + n + 1
+  LastName >> NC.c := DE        // Chain last name to this one.
+
+  DE >> NC.s := true            // This entry is chained.
+  DE >> NC.c := 0               // No chain yet.
+  DE >> NC.n := n               // Number of words in the name.
+  DE >> NC.f := f               // Offset wrt NameB.
+  LastName := DE                // Remember where this is to chain it
+                                //-- to the next entry.
+  resultis f
+ }
+
+and Store(Word) be              // Store an entry in the next free
+                                //-- location.
+{ if N > BookEnd do
+  { BCPLreport(240); SWbits << SW.Symtab := false; return
+   }
+  rv N := Word
+  N := N + 1
+ }
+
+and Copy(SDT) be                // Copy a structure definition table.
+{ let Length := 4 + q1 SDT|4    // Length of the node.
+  and OldN := N                 // Keep track of where we are copying
+                                //-- the thing.
+  N := N + Length + 1           // Set N for recursive calls to Copy.
+  if N > BookEnd do
+  { let t:=SWbits
+    BCPLreport(240); t << SW.Symtab := false; SWbits:=t ;return
+   }
+  OldN|0 := SDT|0 eq 0 => 0, Chain(SDT|0)
+                                // The structure name.
+  for k := 1 to 4 do OldN|k := SDT|k
+                                // Store the first five words.
+  for k := 5 to Length do { OldN|k := N-B; Copy(SDT|k) }
+
+// Copy substructure nodes.
+ }
+
+and MakeEven(Fill) be           // Store a fill word if necessary to
+                                //-- make N be even.
+unless (N&1) eq 0 do Store(Fill)

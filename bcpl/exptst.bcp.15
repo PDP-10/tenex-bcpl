@@ -1,0 +1,114 @@
+manifest { foo: vec 10 }
+
+
+	let Start(a,b,c) be
+{	let x,y,z _ 3,nil,4
+	and t_ vec(10)
+
+	x_a+1
+	x_1+a
+	x_a-1
+	x_a-1+b-c
+	x_rv x
+	x_ rv rv a
+	x_2*x
+	x_x*2
+	x _x/2
+	x_x rshift 1
+	x_x lshift 1
+	x_2*b*(a-1)
+	x_b/2
+	x_x/4
+	x_b/a
+	x_ b rem a
+	x _ x rem 8
+	x_(a-1)/a
+	x_t|0+t|2+t|a+t|(-2)
+	x_0|t+2|t+a|t+(-2)|t
+	x_t|(2*(a-1))
+	x_ (a,,b) + rh a + lh b + rhz x + lhz y
+	x_ (a rshift 2) + (b lshift 2)
+	x_ (a rshift b) + (a lshift b)
+	x_(a+2) le (b-1)
+	x_(a/b) ne (y*z)
+	x_ a \ b & c
+	x _ b & not c \ not b & c
+	x _ x & #777
+	x _ #777 & x
+	x _ #777 \ x
+	x _ x \ #777
+	x _ x neqv a
+	x _ #777 eqv x
+	x _ -x
+	x _ not x
+	x _ -( not x)
+	x _ not (-x)
+
+
+	 c _ c + 1
+	c _ c - 1
+	c _ 1 + c
+	c _ c + 4
+	c|a _ false
+	c|a _ true
+	a|2 _ a|2 + 4
+	c|a _ b+1
+	c|a _ c|a + 1
+	rh a _ rh a + 1
+	lh a _ lh a + 1
+	a|(b+1) _ a|(b+1) + c
+	a _ a + a
+	rh a _ rh a + 3
+	rh a _ - rh a
+	lh a _ - lh a
+	a _ a \ #100
+	lh a _ lh a \ #200
+	lh a _ ~lh a
+	rv a _ rv a + 1
+	b _ b xor #100 xor #200
+	c _ c + a - b
+	x _ #377,,x
+	x _ (rh a) ls (lh b)
+	x _ (a+2),,(b+1)
+	x_ (rh a \ lh b & not rh c) gr (lh x \ (- rh y))
+	x _ (rh x \ lh y),,(lh y \ #100)
+	lh x _ #100
+	rh x _ rh x
+	rh x _ 0
+	rh x _ lh y
+	lh x _ rh a \ not ( lh y) & (- rh t) \ #377
+	rh x _ rh x \ #100
+	lh x _ lh x & (not rh x)
+	x _ lhz(a+3)
+	rh x _ lh (a+1)
+	x _ rhz (a+1)
+	x _ rh rv x > lh rv x
+	rh x _ lh rv x
+	x _ (rhz a) * (lhz b)
+	x _ (lhz a) * (rhz b)
+	x _ lh  ( a*b)
+	x _ lhz ( a*b )
+	x _ lhz( a*b) * lhz( c*t)
+	lh x _ lh ( a*b )
+	lh x _ lh( t|a ) \ lh ( t|2 )
+	lh x _ rh( t|a ) \ rh ( t|2 )
+	x _ (rhz (t|1) ) & #177
+	rh x _ 2 * rh x
+	lh x _ (lh x) / 2
+	rh x _ (rh x) rshift 1
+	lh x _ (lh x) lshift 1
+	x _ ( a & #100) ne 0 => a, b
+	x _ (a & b) eq 0 => a, b
+	a _ b|(c+2)
+	a _ b|(2+c)
+	a _ (c+2)|b
+	a _ (2+c)|b
+	x _ foo|(b+2)
+	x _ (foo+2)|b
+	x _ lv ((foo+2)|b)
+	foo|(b+2) _ x
+	a->b,c _ x
+	x _ lv (a->b,c)
+	finish
+
+}

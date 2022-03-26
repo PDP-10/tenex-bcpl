@@ -1,0 +1,281 @@
+
+
+        //psymb.bcp
+        //program to produce a combined symbol-table source listing of a bcpl program
+
+        //////////////////
+        // start
+        // indent
+        // putoutsymb
+        // putoutblkamark
+        // error
+        // gcpfcm
+        // goodoutname
+        // goodinname
+        ///////////////////
+
+manifest
+ {
+   Bitsperword_36
+ }
+
+get "<xbcpl>headsymb"
+get "<bcpl>head"
+get "<bcpl>utilhead"
+
+external{ prevcp ; gcpfcm}
+
+static
+ { kbdoutstream_0
+   syorg_0
+   srcis_0
+   prevcp_0
+ }
+
+let Start() be
+ {    let t,tt_nil,nil
+   let v_vec 100
+   let inname_vec 40
+   let outname_vec 40
+   kbdoutstream_CreateOutput(0)
+OUTPUT_kbdoutstream
+INPUT_FindInput(0)
+WriteS("pgm. root name: ")
+ReadWord(inname)
+append(inname,".symtab",outname)
+   OUTPUT_CreateOutput(outname)
+   
+   let vv_vec 10
+   append(inname,".bcp",vv)
+   srcis_FindInput(vv)
+   
+   append(inname,".s",v)
+   syorg_#200000
+   { let s_FindInput(v,36)
+      let i_0
+      { let ch_BIN(s)
+        if EofFlg do break
+        syorg|i_ch
+        i_i+1
+      } repeat
+      EndRead(s)
+    }
+   let nextcmd_syorg>>SThead.ComB        
+   let nextsmd_syorg>>SThead.SDB        
+   let lastcmd_nextcmd+(syorg>>SThead.ComN)-1        
+   let lastsmd_nextsmd+(syorg>>SThead.SDN)-1        
+   let ch_0
+    { v|0_0
+      prevcp_rfptr(srcis)
+       { Readch(srcis,lv ch)
+         switchon ch into
+          {
+          default:
+            addch(ch,v) 
+            break
+          case $*s:
+          case $*t:
+            addch(ch,v) 
+            loop
+          case $*e:
+            break
+          }
+       }  repeat
+      if ch eq $*e do break
+      until (((syorg+nextcmd)>>STcdYYYYc.Type) eq 0)&(gcpfcm(syorg+nextcmd) ge prevcp) do
+       { nextcmd_nextcmd+(size STcdYYYYc)/36
+         if nextcmd gr lastcmd do break
+       }
+      if nextcmd gr lastcmd do break
+      test gcpfcm(syorg+nextcmd) ls rfptr(srcis) do
+       { unless nextsmd gr lastsmd do
+          { until ((syorg+nextsmd)>>STsd.ILCA) gr ((syorg+nextcmd)>>STcdYYYYc.ILCA) do
+             { putoutsymb(syorg+nextsmd)
+               nextsmd_nextsmd+((((syorg+nextsmd)>>STsd.Type) ls STmanifest)=>2,1)
+               if nextsmd gr lastsmd do break
+             }
+          }
+         putoutblkamark(syorg+nextcmd)
+       }
+      or indent()
+      WriteS(v)
+      until ch=$*n \ ch=$*c \ ch=$*l do
+       { Readch(srcis,lv ch)
+         if ch eq $*e do break
+         Writech(OUTPUT,ch)
+       }
+if ch=$*c do PBOUT(BIN(srcis))
+    }  repeat
+   WriteS(v)
+   until ch eq $*e do
+    { Readch(srcis,lv ch)
+      if ch eq $*e do break
+      Writech(OUTPUT,ch)
+    }
+   EndWrite(OUTPUT)
+   OUTPUT_kbdoutstream
+   WriteS(outname)
+   WriteS("*n")
+   EndWrite(OUTPUT)
+ }
+
+and indent() be WriteS("*s*s*s*s*s*s*s*s")
+
+and putoutsymb(sd) be
+ { let type_sd>>STsd.Type
+   switchon type into
+    {
+    case STparam:
+    case STstatic:
+    case STlocal:
+    case STlocalYYYYbig:
+      endcase
+    default:
+      return
+    }
+   let v_vec 10
+   WriteS("=>=>*"")
+   WriteS(syorg+(syorg>>SThead.NameB)+(sd>>STsd.Name))
+   WriteS("*"")
+   switchon type into
+    {
+    case STparam:
+    case STlocal:
+      WriteS("[")
+      WriteS(inttoocttxt(sd>>STsd.Data,v))
+WriteS("(S)")
+      WriteS("]*n")
+      endcase
+      
+    case STlocalYYYYbig:
+      WriteS("[")
+      WriteS(inttoocttxt(sd>>STsd.ILCB,v))
+WriteS("(S)")
+      WriteS("]*n")
+      endcase
+      
+    case STstatic:
+      WriteS("(b*s")
+      WriteS(inttoocttxt(sd>>STsd.ILCB,v))
+      WriteS(")*n")
+      endcase
+    }
+ }
+
+and putoutblkamark(cd) be
+ { let v_vec 10
+   inttoocttxt(cd>>STcdYYYYc.ILCA,v)
+   if q3 v|0 eq $# do q3 v|0_$*s
+   for i_1 to 6-q4 v|0 do WriteS("*s")
+   WriteS(v)
+   WriteS(";*s")
+ }
+
+and error(num,str) be
+ { let t_OUTPUT
+   OUTPUT_kbdoutstream
+   switchon num into
+    {
+    case 1:
+      WriteS("psymb <source file name> <OUTPUT file name(optional)>*n")
+      endcase
+    case 2:
+      WriteS("source file named ")
+      WriteS(str) 
+      WriteS(".b is undefined*n")
+      endcase
+    case 3:
+      WriteS("bad name for OUTPUT file...") 
+      WriteS(str) 
+      WriteS("*n")
+      endcase
+    case 4:
+      WriteS("symbol table named ") 
+      WriteS(str) 
+      WriteS(" is undefined*n")
+      endcase
+    }
+   OUTPUT_t
+ }
+
+and gcpfcm(cd)_(cd>>STcdYYYYc.Word)
+
+and inttoocttxt(x,v) _valof
+ { static{ z_vec 30}
+   z|0_0
+   let stuff(bs,ch) be { z|0_z|0+1 ; z|(z|0)_ch}
+   let s_CreateOutput(-stuff)
+   Writech(s,$*s)
+   WriteOct(s,x)
+   EndWrite(s)
+   Packstring(z,v)
+   resultis v
+ }
+
+        //this fn returns the element (a character) at the specified position within the specified string
+and pullch(txt,cp)_valof
+ { if cp gr q4(txt|0) do Help()
+   switchon cp rem 4 into
+    {
+    case 0:
+      resultis q4(txt|(cp/4))
+    case 1:
+      resultis q3(txt|(cp/4))
+    case 2:
+      resultis q2(txt|(cp/4))
+    case 3:
+      resultis q1(txt|(cp/4))
+    }
+ }
+
+        //this procedure replaces the element at the specified position within the specified string with the specified character
+and putch(ch,txt,cp) be
+ { if cp gr q4(txt|0) do Help()
+   switchon cp rem 4 into
+    {
+    case 0:
+      q4(txt|(cp/4))_ch
+      return
+    case 1:
+      q3(txt|(cp/4))_ch
+      return
+    case 2:
+      q2(txt|(cp/4))_ch
+      return
+    case 3:
+      q1(txt|(cp/4))_ch
+      return
+    }
+ }
+
+        //append the specified character to the specified string
+and addch(ch,txt) be 
+ { let cp_q4(txt|0)+1
+   q4(txt|0)_cp
+   switchon cp rem 4 into
+    {
+    case 0:
+      txt|(cp/4)_(ch lshift 9),,0
+      return
+    case 1:
+      q3(txt|(cp/4))_ch
+      return
+    case 2:
+      q2(txt|(cp/4))_ch
+      return
+    case 3:
+      q1(txt|(cp/4))_ch
+      return
+    }
+ }
+
+        //append the string t2 to the string t1 and store result in the string t3
+and append(t1,t2,t3) _valof
+ { let i,j_q4(t1|0),q4(t2|0)
+   let v2_vec 100
+   for l_1 to j/4+1 do v2|(l-1)_t2|(l-1)
+   for l_1 to i/4+1 do t3|(l-1)_t1|(l-1)
+   for l_1 to q4(v2|0) do addch(pullch(v2,l),t3)
+   resultis t3
+ }
+

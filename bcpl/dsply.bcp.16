@@ -1,0 +1,676 @@
+
+// DSPLY.BCP---Interface to Imsys
+
+get "<BCPL>head"
+get "<BCPL>utilhead"
+get "<BCPL>displayhead"
+
+manifest
+{ IMCLRALL  _ 1
+  IMDELETF  _ 2
+  IMTURNON  _ 3
+  IMTRNOFF  _ 4
+  IMREPOS  _  5
+  IMDVECT  _  6
+  IMDTEXT  _  7
+  IMSETSCL  _ 8
+  IMCHNSCL  _ 9
+  IMPLTMOD  _ 10
+  IMLOADYS  _ 11
+  IMSETSW  _  12
+  IMCLRSW  _  13
+  IMDRAG  _   14
+  IMRDPEN  _  15
+  IMDSUBR  _  16
+  IMDCALL  _  17
+  IMSTBLNK  _ 18
+  IMBLINK  _  19
+  IMUNBLNK  _ 20
+  IMNLSET  _  21
+  IMDRAGXY  _ 22
+  IMSETSCR  _ 23
+  IMCLSCR  _  24
+  IMSTSCRL  _ 25
+  IMSTYBND  _ 26
+  IMSTXBND  _ 27
+  IMCLRBND  _ 28
+  IMDSNUM  _  29
+  IMUNSCRL  _ 30
+  IMSTKNOB  _ 31
+  IMSETSG  _  32
+  IMINSRT  _  33
+ }
+
+manifest
+{ MAXFN  _   128
+  SCROLL  _  1
+  STORSIZE _ 2000
+ }
+
+static
+{ xy:            vec MAXFN*2
+
+  CurrentFrame:  nil
+  TheTextScale:  nil
+  TextSize:      nil
+  opened:        vec MAXFN
+  calls:         vec MAXFN
+  storage:       vec STORSIZE   // |0=ptr to next register
+
+// |1=ptr to next block or 0
+ }
+
+let InputPen(penxy) _ valof
+{ EchoMode(false)
+  until PBIN()=#34 do loop
+  penxy|1_(PBIN()-$0) lshift 5 \(PBIN()-$0)
+  penxy|2_(PBIN()-$0) lshift 5 \(PBIN()-$0)
+  PBIN(); PBIN()
+  EchoMode(true)
+  resultis penxy
+ }
+
+and PlotList(ys , n, Deltax, beam, intensify, f) be
+{ let v_vec 31
+  let na _ NumbArgs()
+  if na<3 then Deltax_1
+  if na<4 then beam_false
+  if na<5 then intensify_false
+  f_whichframe((na<6)=>0,f)
+  PlotMode(Deltax,beam,intensify,f)
+  v|0_IMLOADYS
+  let i,j_nil,0
+  { i_2
+   {  if j=n then break
+      v|i_ys|j
+      j_j+1
+      i_i+1
+     }
+    repeatuntil i>63
+    v|1_((i-2)lshift 8)+f
+    unless i=2 do lxim(v,i,36,#10036)
+   }
+  repeatuntil j=n
+ }
+
+and Dtext(text,x,y,f) be
+{ structure
+  { string
+    { length char; ch^511 char
+     }
+   }
+  let v,na,s,chsize,del_
+    vec 63, NumbArgs(), nil, ((TextSize=0)=>-1,TextSize), 0
+  f_whichframe((na<4)=>0,f)
+  test na ge 3
+  ifso MoveTo(x,y,f)
+  ifnot unless na<2 do MoveTo(x,gety(f),f)
+  s_mgetscale(f)
+  unless s=TheTextScale do ChangeScale(s,f)
+  v|0, v|1, v|2, v|3 _ 0,IMDTEXT,0,f
+  let i,j_nil,1
+  na_text>>string.length
+  { i_4
+    { if j>na then break
+
+      v|i_text>>string.ch^j
+      j_j+1
+      i_i+1
+      del_del+chsize
+     }
+    repeatuntil i>63
+    i_i-4
+    unless i=0 do
+    { v|2_i
+      if i&1=1 then i_i+1
+      lxim(v,i+4,100,#10036)
+     }
+   }
+  repeatuntil j>na
+  Deltax(((del<0)=>((-del) rshift 1),del),f)
+  unless s=TheTextScale do ChangeScale(s,f)
+ }
+
+and ClearScreen() be
+{ for i _ 1 to MAXFN do
+  { opened|i _ 1
+    calls|i _ 0,,0
+    xy|i _ 0
+    xy|(i + MAXFN) _ 0
+   }
+  CurrentFrame _ 1
+  TheTextScale _ 1
+  TextSize _ 7
+  storage|0_storage+2
+  storage|1_0
+  ImSend(IMCLRALL)
+ }
+
+and whichframe(f) _ valof
+{ if (NumbArgs()=0) \(f=0) do resultis CurrentFrame
+  unless 0<f le MAXFN do error("*nIllegal frame number*n",f)
+  resultis f
+ }
+
+and makelv(dx,dy,f,op) be
+{ f _ whichframe(f)
+  ImSend(IMDVECT,(op lshift 8) \ f,dx, dy)
+  SetStatus(f, true)
+  Addxy(f,dx,dy)
+ }
+
+and SetStatus(f,s) be
+lh opened|f _ s
+
+and GetStatus(f) _ lh opened|f
+
+and GetScale(f) _ mgetscale(whichframe((NumbArgs()=0)=>0,f))
+
+and Delta(x,f,ofst) _ x-xy|(ofst + f)
+
+and Deltax(x,f) _ Delta(x,f,0)
+
+and Deltay(y,f) _ Delta(y,f,MAXFN)
+
+and Setxy(f,x,y,array) be
+{ array|f _ x
+  array|(f + MAXFN) _ y
+ }
+
+and Addxy(f,x,y) be
+{ xy|f _ x + xy|f
+  xy|(f + MAXFN) _ y + xy|(f+ MAXFN)
+ }
+
+and getx(f,array) _ array|f
+
+and gety(f,array) _ array|(f + MAXFN)
+
+and mgetscale(f) _ rh opened|f
+
+and setascale(f,s) be rh opened|f _ s
+
+and setstatuscale(f,scl,status) be
+opened|f _((NumbArgs() = 2) => 0, status),,scl
+
+and CallsWho(f) _ rh calls|f
+
+and WhoCalls(f) _ lh calls|f
+
+and SetWhoCalls(f,v) be lh calls|f _(NumbArgs() = 1) =>0,v
+
+and ImSend(x,nil repname 40) be
+lxim(lv x, NumbArgs(), 36, 4126)
+
+and Sgx(x,f) be
+{ if NumbArgs() = 1 do f _ 0
+  f _ whichframe(f)
+  ImSend(IMSETSG,f,5)
+  ImSend(IMINSRT,f,#10000\(x&#1777))
+  ImSend(IMSETSG,f,1)
+ }
+and Sgy(y,f) be
+{ if NumbArgs() = 1 do f _ 0
+
+  f _ whichframe(f)
+
+  ImSend(IMSETSG,f,5)
+  ImSend(IMINSRT,f,#20000\(y&#1777))
+  ImSend(IMSETSG,f,1)
+ }
+
+and SetBlink(x,y) be ImSend(IMSTBLNK,x,y)
+
+and Blink(x,nil repname 40) be
+{ let n _ NumbArgs()
+
+  test n=0 then ImSend(IMBLINK,CurrentFrame)
+  or for i _ 0 to n-1 do ImSend(IMBLINK,whichframe((lv x)|i))
+ }
+
+and UnBlink(x,nil repname 40) be
+{ let n _ NumbArgs()
+
+  test n=0 then ImSend(IMUNBLNK,CurrentFrame)
+  or for i _ 0 to n-1 do ImSend(IMUNBLNK,whichframe((lv x)|i))
+ }
+
+and MoveTo(x,y,f) be
+{ if NumbArgs() = 2 do f _ 0
+  let z _ whichframe(f)
+
+  test GetStatus(z) = 0 then RePos(x,y,f)
+  or VecMov(Deltax(x,z), Deltay(y,z), f)
+ }
+
+and Point(x,y,f) be
+{ if NumbArgs() = 2 do f _ 0
+  MoveTo(x,y,f)
+  makelv(0,0,f,1)
+ }
+
+and SelectF(f) _ valof
+{ if NumbArgs() = 0 do f _ 0
+  let x _ CurrentFrame
+
+  CurrentFrame _ whichframe(f)
+  resultis x
+ }
+
+and Vector(dx,dy,f) be
+{ if NumbArgs() = 2 do f _ 0
+  makelv(dx,dy,f,1)
+ }
+
+and DotVect(dx,dy,f) be
+{ if NumbArgs() = 2 do f _ 0
+  makelv(dx,dy,f,3)
+ }
+
+and VecMov(dx,dy,f) be
+{ if NumbArgs() = 2 do f _ 0
+
+  test (dx ne 0) \(dy ne 0) then makelv(dx,dy,f,0)
+
+  or SetStatus(whichframe(f), true)
+ }
+
+and LineTo(x,y,f) be
+{ if NumbArgs() = 2 do f _ 0
+
+  let z _ whichframe(f)
+
+  Vector(Deltax(x,z), Deltay(y,z), f)
+ }
+
+and DotTo(x,y,f) be
+{ if NumbArgs() = 2 do f _ 0
+
+  let z _ whichframe(f)
+
+  DotVect(Deltax(x,z), Deltay(y,z), f)
+ }
+
+and RePos(x,y,f) be
+{ if NumbArgs() = 2 do f _ 0
+  f _ whichframe(f)
+  unless WhoCalls(f) = 0
+  do error("*nCan't do a RePos on subroutines*n",f)
+  ImSend(IMREPOS,f,x,y)
+  Setxy(f,x,y,xy)
+  SetStatus(f,true)
+ }
+
+and TurnOn(f) be
+{ if NumbArgs() = 0 do f _ 0
+  f _ whichframe(f)
+  unless WhoCalls(f) = 0 do error("*nCan't TurnOn subroutines*n",f)
+  ImSend(IMTURNON,f)
+ }
+
+and TurnOff(f) be
+{ if NumbArgs() = 0 do f _ 0
+
+  ImSend(IMTRNOFF,whichframe(f))
+ }
+
+and TextScale(scale) _ valof
+{ let x _ TheTextScale
+  TextSize _ 7*scale
+  TheTextScale _ scale
+  resultis x
+ }
+
+and SetScale(scl,f) be
+{ if NumbArgs() = 1 do f _ 0
+  f _ whichframe(f)
+
+  unless WhoCalls(f) = 0
+  do error("*nCan't do a SetScale on subroutines*n",f)
+  ImSend(IMSETSCL,(scl lshift 8)\f)
+  setascale(f,scl)
+ }
+
+and ChangeScale(scl,f) be
+{ if NumbArgs() = 1 do f _ 0
+  f _ whichframe(f)
+  ImSend(IMCHNSCL,(scl lshift 8)\f)
+ }
+
+and Line(x1,y1,x2,y2,f) be
+{ if NumbArgs() = 4 do f _ 0
+
+  MoveTo(x1,y1,f)
+  LineTo(x2,y2,f)
+ }
+
+and Dot(x1,y1,x2,y2,f) be
+{ if NumbArgs() = 4 do f _ 0
+
+  MoveTo(x1,y1,f)
+  DotTo(x2,y2,f)
+ }
+
+and AutoDisplay(dev,bitt,f) be
+{ if NumbArgs() = 0 do dev _ 0
+  if NumbArgs() < 3 do f _ 0
+  test NumbArgs() le 1 then ImSend(IMCLRSW,whichframe(dev))
+
+  or test WhoCalls(whichframe(f)) = 0 then ImSend(IMSETSW,
+                                                  whichframe(f),
+                                                  (bitt lshift 8) \
+                                                 dev)
+
+     or error("*nCan't AutoDisplay subroutines*n",f)
+
+ }
+
+and AutoScale(dev,bitt,f) be
+{ let n _ NumbArgs()
+  if n < 3 do f _ 0
+  if n = 0 do dev _ 0
+  test n le 1 then ImSend(IMCLRSW,#400\whichframe(dev))
+
+  or test WhoCalls(whichframe(f)) = 0 then ImSend(IMSETSW,
+                                                  #400\whichframe(f),
+                                                  (bitt lshift 8) \
+                                                    dev)
+     or error("*nCan't AutoScale subroutines*n",f)
+
+ }
+
+and NLSet(n) be ImSend(IMNLSET,n)
+
+and Knobx(knob,ofst,f) be
+{ if NumbArgs() le 2 do f _ 0
+
+  ImSend(IMDRAGXY, #1000 \ whichframe(f), knob, (NumbArgs() = 1) => 0,
+         ofst)
+ }
+
+and Knoby(knob,ofst,f) be
+{ let n _ NumbArgs()
+
+  if n le 2 do f _ 0
+
+  ImSend(IMDRAGXY,#1400 \ whichframe(f), knob, (n=1) => 0, ofst)
+ }
+
+and Rknobx(knob,f) be
+{ if NumbArgs() = 1 do f _ 0
+
+  ImSend(IMDRAGXY, #2200 \ whichframe(f),knob,0)
+ }
+
+and Rknoby(knob,f) be
+{ if NumbArgs() = 1 do f _ 0
+
+  ImSend(IMDRAGXY,#2400\whichframe(f), knob, 0)
+ }
+
+and ClearPlot(f) be
+{ if NumbArgs() = 0 do f _ 0
+
+  ImSend(IMCLSCR,whichframe(f))
+ }
+
+and Cknobx(knob,f) be
+{ if NumbArgs() = 1 do f _ 0
+
+  ImSend(IMCLRSW,#1000\whichframe(f))
+ }
+
+and Cknoby(knob,f) be
+{ if NumbArgs() = 1 do f _ 0
+
+  ImSend(IMCLRSW,#1400\whichframe(f))
+ }
+
+and Crknobx(knob,f) be
+{ if NumbArgs() = 1 do f _ 0
+
+  ImSend(IMCLRSW,#2000\whichframe(f))
+ }
+
+and Crknoby(knob,f) be
+{ if NumbArgs() = 1 do f _ 0
+
+  ImSend(IMCLRSW,#2400\whichframe(f))
+ }
+
+and AutoStep(dev,bitt,f) be
+{ let n _ NumbArgs()
+  if n < 3 do f _ 0
+  if n = 0 do dev _ 0
+  test n le 1 then ImSend(IMCLRSW,#3000\whichframe(dev))
+
+  or ImSend(IMSETSW,#3000\whichframe(f), (bitt lshift 8)\dev)
+ }
+
+and AutoBeam(dev,bitt,f) be
+{ let n _ NumbArgs()
+  if n < 3 do f _ 0
+  if n = 0 do dev _ 0
+
+  test n le 1 then ImSend(IMCLRSW,#3000\whichframe(dev))
+
+  or ImSend(IMSETSW,#3400\whichframe(f), (bitt lshift 8)\dev)
+ }
+
+and SetYRange(ymin,ymax,f) be
+{ let n _ NumbArgs()
+  if n < 3 do f _ 0
+  if n = 0 do ymin _ 0
+
+  test n le 1 then ImSend(IMCLRBND,#4000\whichframe(ymin))
+
+  or ImSend(IMSTYBND,#4000\whichframe(f),ymin,ymax)
+ }
+
+and SetXRange(xmin,xmax,f) be
+{ let n _ NumbArgs()
+  if n < 3 do f _ 0
+  if n = 0 do xmin _ 0
+  test n le 1 then ImSend(IMCLRBND,#4400\whichframe(xmin))
+  or ImSend(IMSTXBND,#4400\whichframe(f),xmin,xmax)
+ }
+
+and UnScroll(f) be
+{ if NumbArgs() = 0 do f _ 0
+  ImSend(IMUNSCRL,whichframe(f))
+ }
+
+and NoNumber(f) be
+{ if NumbArgs() = 0 do f _ 0
+  ImSend(IMUNSCRL,#5000\whichframe(f))
+ }
+
+and ClearF(f) be
+{ if NumbArgs()=0 do f_0
+  f_whichframe(f)
+  unless WhoCalls(f)=0
+  do error("*nCan't clear a subroutine that is in use*n",f)
+  ImSend(IMDELETF,f)
+  setstatuscale(f,1)
+  Setxy(f,0,0,xy)
+  let cw_CallsWho(f)
+  until cw=0 do
+  { let this_cw
+    let wc_WhoCalls(cw|1)
+    let old_lv wc
+    let p_wc
+    until p=0 do
+    { if p|1=f do
+      { old|0_p|0
+        retblock(p)
+        p_old
+       }
+      old_p
+      p_p|0
+     }
+    lh calls|(cw|1)_wc
+    cw_cw|0
+    retblock(this)
+   }
+  rh calls|f_0
+ }
+
+and ReadPen(penxy)_valof
+{ ImSend(IMRDPEN)
+  InputPen(penxy)
+ }
+
+and Drag(penxy,nil repname 40)_valof
+{ let n_NumbArgs()-1
+  test n=0 then
+  { SetStatus(CurrentFrame,true)
+    ImSend(IMDRAG,CurrentFrame)
+   }
+  or for i_1 to n do
+     { let f_whichframe((lv penxy)|i)
+       SetStatus(f,true)
+       ImSend(IMDRAG,f)
+      }
+  resultis ReadPen(penxy)
+ }
+
+and BeamPos(xyvec,f)_valof
+{ if NumbArgs()=1 do f_0
+  f_whichframe(f)
+  xyvec|1,xyvec|2_getx(f,xy),gety(f,xy)
+  resultis xyvec
+ }
+
+and PlotMode(deltax,beam,intensify,f) be
+{ let n_NumbArgs()
+  if n<4 do f_0
+  f_whichframe(f)
+  unless GetStatus(f)=SCROLL do error("*nNot a scrollable frame*s",f)
+  ImSend(IMPLTMOD,
+         f\(((Deltax&3)+(intensify=>8,0)+(beam=>16,0))lshift 8))
+ }
+
+and BlockF(n,f) be
+{ if NumbArgs()=1 then f_0
+  f_whichframe(f)
+  ClearF(f)
+  ImSend(IMSETSCR,f,n)
+  SetStatus(f,SCROLL)
+ }
+
+and SetKnob(knob,shift,ofst) be
+{ let n_NumbArgs()
+  if n<3 do ofst_0
+  if n<2 do shift_0
+  test knob<6 then knob_shift+1
+  or knob_shift-3
+  if (knob>8)\(knob<-6) do error("*nAn illegal shift value:*s",shift)
+  ImSend(IMSTKNOB,knob,knob,ofst)
+ }
+
+and DefDSub(x,nil repname 40) be
+for i_0 to NumbArgs()-1 do
+{ let j_(lv x)|i
+  AutoDisplay(j)
+  AutoScale(j)
+  TurnOff(j)
+  ImSend(IMDSUBR,j)
+  SetWhoCalls(j,0)
+  SetStatus(j,true)
+  Setxy(j,0,0,xy)
+ }
+
+and DCall(frame,x,y,scale,f) be
+{ let n_NumbArgs()
+  if n<5 do f_0
+  frame_whichframe(frame)
+  f_whichframe(f)
+  if f=frame do error("*nAttempt to define a recursive frame*n",f)
+  unless n=1 do MoveTo(x,y,f)
+  if (WhoCalls(f) ne 0)&(n>3)
+  do error("*nScaling not allowed when one subroutine calls another*n")
+  let scl_mgetscale(f)
+  let q_(n<4)\(scl=scale)
+  unless q do ChangeScale(scale,f)
+
+// ????????
+
+  let new_getblock(2)
+  new|0_lh calls|frame
+  new|1_f
+  lh calls|frame_new
+  new_getblock(2)
+  new|0_rh calls|f
+  new|1_frame
+  rh calls|f_new
+  ImSend(IMDCALL,f\(frame lshift 8))
+  x,y_getx(frame,xy),gety(frame,xy)
+  test scl=0 then
+  { x_x/2
+    y_y/2
+   }
+  or
+  { x_x*scl
+    y_y*scl
+   }
+  Addxy(f,x,y)
+  unless q do ChangeScale(scl,f)
+ }
+
+and DisplayNumber(f1,f2,ofst,i,d,f,yf1,yf2) be
+{ let n_NumbArgs()
+  if n<8 do yf2_false
+  if n<7 do yf1_false
+  if n<6 do f_0
+  f_whichframe(f)
+  if n<5 do d_0
+  if n<4 do i_6-d
+  if n<3 do ofst_0
+  if n<2 do f2_0
+  if n=0 do f1_0
+  if (d<0)\(d>5)
+  do error("*nIllegal args to DisplayNumber*n")
+  let f1n,f2n_f1<0,f2<0
+  f1_f1n=>-f1,f1
+  f2_f2n=>-f2,f2
+  ImSend(IMDSNUM, #5000\f,
+         ((i&#77)lshift 9)\(f1n=>#400,0)\f1\(yf1=>#100000,0),
+         ((d&#77)lshift 9)\(f2n=>#400,0)\f2\(yf2=>#100000,0),ofst)
+ }
+
+and error(s,n) be
+{ let p_CreateOutput(0)
+  if NumbArgs()=2 do WriteN(p,n)
+  Help(s)
+ }
+
+and Scroll(wst,wsz,f) be
+{ if NumbArgs()<3 do f_0
+  f_whichframe(f)
+  unless GetStatus(f)=SCROLL do error("*nNot a scrollable frame:*s",f)
+  ImSend(IMSTSCRL,f,wst,wsz)
+ }
+
+and retblock(p) be
+{ p|0_storage|1
+  storage|1_p
+ }
+
+and getblock(n) _valof
+{ let p_nil
+  test storage|1=0 then
+  { p_storage|0
+    p|0_n
+    p_p+1
+    storage|0_p+n
+    if (storage|0-storage) ge STORSIZE
+    do error("*nDISPLAY storage size exceeded!!")
+   }
+  or
+  { p_storage|1
+    storage|1_p|0
+    unless p|(-1) ge n
+    do error("*n Something terrible happened to the display free storage lists*n")
+   }
+  resultis p
+ }

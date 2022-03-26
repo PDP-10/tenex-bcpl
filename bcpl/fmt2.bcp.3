@@ -1,0 +1,422 @@
+get "headfmt.bcp"
+
+let ReadLines(Term) be
+{ lp:
+  let x _ ReadLine()
+  if x = Term then return
+  if x = $*n \ x < 0 then goto lp
+  test x = $*e
+  ifso
+  { WriteS(OUTPUT, "Premature end of file*n")
+    return
+  }
+  ifnot
+  { WriteS(OUTPUT, "Unmatched ")
+    Writech(OUTPUT, x)
+    WriteS(OUTPUT, "*n")
+    FinishLine()
+    goto lp
+  }
+}
+
+and ReadLine() _ valof
+{ let Result _ nil
+  { let MaxPrecedence _ vec MAXPRE
+    for i _ 0 to MAXPRE do MaxPrecedence|i _ 0
+    if MinFold ge MAXPRE \ IfBrace() then
+    { Result _ ReadLine1(MAXPRE, MaxPrecedence)
+      loop
+    }
+    if ErrorSet(1000, TryReadLine, lv Result, MAXPRE, MaxPrecedence)
+    then loop
+    let x _ 0
+    and MinPre _ MAXPRE
+    for i _
+          MAXPRE to (MinFold > 1 => MinFold, 1) by -1
+    do test MaxPrecedence|i ne 0
+       ifso
+       { MaxPrecedence|i _ x
+         if i ne THEN then x _ x + IndentStep
+         MinPre _ i
+       }
+       ifnot MaxPrecedence|i _ -1
+    x _ MaxPrecedence|0
+    MaxPrecedence|0 _ -1
+    for i _
+          x to MinPre + 1 by -1
+    do if MaxPrecedence|i ge
+          0
+       then if ErrorSet(1000, TryReadLine, lv Result, i,
+                        MaxPrecedence)
+           then goto Success
+    Result _ ReadLine1(MinPre, MaxPrecedence)
+  Success:
+  }
+  repeatwhile Result = $*n & Needs ne 0
+  resultis Result
+}
+
+and TryReadLine(Result, FoldLevel, MaxPrecedence) be
+{ rv Result _ ReadLine1(FoldLevel, MaxPrecedence)
+}
+
+and ReadLine1(FoldLevel, MaxPrecedence) _ valof
+{ let FoldMargin _ Line|0 + Indent
+  and SawSpace _ false
+  and FoldLists _ false
+  and GotDoEquiv _ false
+  and LastFold _ 0
+  if Line|0 = 0 do
+  { Indent _ LeftMargin         // Default indentation
+    LastLabel _ 0
+  }
+  StartSyllable _ true
+  let Result _ valof
+  {
+    {chlp                       // Loop to here for each character
+      Getch()                   // Get a character
+      switchon Ch into
+      { case $*e:      resultis $*e
+
+        Spacecase:     Ch _ $*s
+        case $*s:      FlushBlanks()
+                       if Line|0 ne 0
+                       do test Line|(Line|0) = $*s
+                          ifso goto Sepcase1
+                          ifnot goto Sepcase
+                       SawSpace _ true
+                       loop
+
+        case $*f:      if Line|0 ne 0 then { ReturnCh(1); goto crcase}
+                       BlankLine _ BlankLine & ~BLANKBEFORE
+                       Addch($*f)
+                       FinishLine(lv LastFold)
+                       Indent _ 0
+                       BlankLine _ BlankLine \ HADBLANK
+                       goto ecrlp
+
+        case $(:       if MaxPrecedence|0 ge
+                          0
+                       then MaxPrecedence|LOGAND _ -1
+                       DoParen(FoldLevel, lv LastFold)
+                                // Process paren
+                       StartSyllable _ true
+                       loop     // Continue processing
+
+        case $):       resultis $)
+
+        case $}:       if Line|0 ne 0 &~OneLineFlag do
+                       { FinishLine(lv LastFold)
+                         ReturnCh(1)
+                         loop
+                       }
+                       BlankLine _
+                         BlankLine &
+                         ~(BLANKBEFORE \ BLANKAFTER)
+                       resultis $}
+
+        case ${:
+        LBracecase:    DoBrace(true, false)
+                       goto ecrlp
+
+        case $$:       Addch(Ch)
+                       Getch()
+                       if Ch = $** \ Ch = $*^ then
+                       { Addch(Ch)
+                         Getch()
+                       }
+
+        dfltcase:      StartSyllable _ false
+                       Addch(Ch)
+                       loop     // Get a new character and loop
+
+        Sepcase:       Addch(Ch)
+        Sepcase1:      StartSyllable _ true
+                       loop
+
+        case $;:       Operator(SEMIC, MaxPrecedence, lv LastFold,
+                                LeftMargin, (InDecl => 0, FoldLevel), #400+Ch)
+                       GotDoEquiv _ false
+                       goto Sepcase1
+
+        case $*n:
+        crcase:        if (Needs & DOBIT) ne 0 then goto Spacecase
+                       test Getch() = $*s
+                       ifso
+                       { FlushBlanks()
+                         if IfComment() then goto Commentcase
+                       }
+                       ifnot ReturnCh(1)
+                       FinishLine(lv LastFold)
+        ecrlp:         resultis $*n
+
+        case $/:       Getch()  // Possible comment. Check it out.
+                       if Ch ne $/ then
+                       { ReturnCh(1)   // It's not, so back up
+                         Operator(TIMES, MaxPrecedence, lv LastFold,
+                                  FoldMargin, FoldLevel, $/)
+                         goto Sepcase1
+
+// And treat a operator
+                       }
+                       if SawSpace then Addch($*s)
+        Commentcase:   DoComment()   // Process comment
+                       goto ecrlp
+
+        case $':
+        case $":
+                       { let Term _ Ch
+                         Addch(Ch)
+                         Getch()
+                         until Ch=Term do
+                         { Addch(Ch)
+                           if Ch = $** \ Ch = $*^ then
+                           { Getch()
+                             Addch(Ch)
+                           }
+                           Getch()
+                         }
+                         goto Sepcase
+                       }
+
+        case $::       Getch()  // Check for possible :=
+                       if Ch = $= goto LeftArrowcase
+
+                       ReturnCh(1)
+                       Ch _ $:
+                       FlushTrailingBlanks()
+                       unless InCase\InDecl do
+                       { Addch($:)
+                         Indent _ Indent-IndentStep
+                         AllowComment()
+                         goto ecrlp
+                       }
+                       if InDecl then Ch _ DeclSeparator
+        DeclSepcase:   if Ch = ASSIGNCH then Addch($*s)
+                       Addch(Ch)
+                       Addch($*s)
+                       SkipEOL()
+                       FlushBlanks()
+                       if LastLabel > 0 do
+                       { ResetInputFile(rhz LastLabel)
+                         Line|0 _ lhz LastLabel
+                         FinishLine(lv LastFold)
+                         SawSpace_false
+                         loop
+                       }
+                       if LastLabel ge
+                          0
+                       then Indent _ Indent - CaseDeclUndent
+                       LastLabel _ Line|0,,ReadInputPointer()
+                       { let NSpaces _ LeftMargin-Line|0-Indent
+                         if NSpaces < 0 then
+                         { if IfComment() then
+                           { DoComment(); goto ecrlp
+                           }
+                           LabelFitFailures|0 _ LabelFitFailures|0 + 1
+                           if NSpaces > -MAXLFF
+                           then LabelFitFailures|(-NSpaces) _
+                                  LabelFitFailures|(-NSpaces) +
+                               1
+                           FinishLine(lv LastFold)
+                           SkipEOL()
+                           goto ecrlp
+                         }
+                         Space(NSpaces)
+                       }
+                       goto Sepcase1
+
+        case $_:
+        LeftArrowcase: Ch _ ASSIGNCH
+                       unless InDecl do
+                       { Operator(LA, MaxPrecedence, lv LastFold,
+                                  FoldMargin + 2, FoldLevel, Ch)
+                        goto Sepcase1
+                       }
+                       Ch _ DeclSeparator
+                       goto DeclSepcase
+
+        case $,:       Addch(Ch)
+                       Getch()
+                       if Ch ne $, then
+                       { ReturnCh(1)
+                         let Dummy _ COMMA
+                         Operator(COMMA,
+                                  (FoldLists => lv Dummy,
+                                   MaxPrecedence),
+                                  lv LastFold,
+                                  FoldMargin,
+                                  (FoldLists => COMMA-1, FoldLevel))
+                         goto Sepcase1
+                       }
+                       Operator(COMCOM, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel, Ch)
+                       goto Sepcase1
+
+        case $\:       Operator(LOGOR, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel, Ch)
+                       goto Sepcase1
+
+        case $&:       Operator(LOGAND, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel, Ch)
+                       goto Sepcase1
+
+        case $=:       if Getch() = $> then goto Condcase
+                       ReturnCh(1)
+                       Operator(RELOP, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel, $=)
+                       goto Sepcase1
+
+        Condcase:      Addch(CondSign)
+                       Operator(COND, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel, $>)
+                       goto Sepcase1
+
+        case $>:       Addch(Ch)
+                       Getch()
+                       if Ch eq $> then goto dfltcase
+                       ReturnCh(1)
+                       Operator(RELOP, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel)
+                       goto Sepcase1
+
+        case $<:       Addch(Ch)
+                       if Getch() eq $< then goto dfltcase
+                       ReturnCh(1)
+                       Operator(RELOP, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel)
+                       goto Sepcase1
+
+        case $-:       if Getch() = $> then goto Condcase
+                       ReturnCh(1)
+                       Ch _ $-
+        case $+:       Operator(PLUS, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel, Ch)
+                       goto Sepcase1
+
+        case $**:      Operator(TIMES, MaxPrecedence, lv LastFold,
+                                FoldMargin, FoldLevel, Ch)
+                       goto Sepcase1
+
+        default:       unless SymbolConstituent(Ch) goto Sepcase
+
+                       unless StartSyllable &
+                              ($a le Ch le $z)
+                       then goto dfltcase
+                       { let Xstring _ nil
+                         and SaveIP _ ReadInputPointer()
+                         and Empty _ Line|0 = 0
+                         let X _ LookupReservedWord(lv Xstring)
+                         and OldNeeds _ Needs
+                         if X = 0 then goto dfltcase
+                         if (X & NLBIT) ne 0 & ~Empty then
+                         { ResetInputFile(SaveIP-1); goto crcase
+                         }
+                         if lhz X = DO &
+                            (OldNeeds & DOBIT) ne 0 &
+                            ~Empty
+                         then Operator(THEN, MaxPrecedence,
+                                       lv LastFold, LeftMargin,
+                                       FoldLevel)
+                         if (X & DOEQV) ne 0 then Needs _ Needs &~DOBIT
+                         Append(Xstring)
+                         Space(1)
+                         let NewFM _ Line|0 + Indent
+                         StartSyllable _ true
+                         FlushBlanks()
+                         switchon lhz X into
+                         { case BREAK: if OldNeeds =
+                                          0
+                                       then BlankLine _
+                                              BlankLine \
+                                              BLANKAFTER
+                                       loop
+
+                           case OP:    Operator(rhz X & #17,
+                                                MaxPrecedence,
+                                                lv LastFold,
+                                                FoldMargin, FoldLevel)
+                                       loop
+
+                           case DECL:  DeclSeparator _
+                                         (X & LABIT) ne 0 => ASSIGNCH, $:
+                                       NeededBlock _ DECL
+                                       AllowComment()
+                                       resultis $*n
+
+                           case INTO:  NeededBlock _ CASE
+                                       loop
+
+                           case LIST:  FoldLists _ true
+                                       FoldMargin _ NewFM
+                                       loop
+
+                           case OR:    if (Needs & ORBIT) = 0 then loop
+                                       Needs _ Needs &~ORBIT
+                                       goto ordocase
+
+                           case DO:    if (Needs & (DOBIT \ IFSOBIT)) =
+                                            0
+                                       then loop
+                                       Needs _
+                                         Needs &
+                                         ~(DOBIT \ IFSOBIT)
+                           ordocase:   SkipEOL()
+                                       FlushBlanks()
+                                       { let SaveNeeds _ Needs
+                                         and SaveLM _ LeftMargin
+                                         and SaveMF _ MinFold
+                                         and SaveOLF _ OneLineFlag
+                                         Needs _ 0
+                                         if Getch() = ${ then
+                                         { DoBrace(false, true)
+                                           Needs _ SaveNeeds
+                                           LeftMargin _ SaveLM
+                                           goto ecrlp
+                                         }
+                                         ReturnCh(1)
+                                         LeftMargin _ NewFM
+                                         test FoldLevel ge THEN &
+                                            (OldNeeds & DOBIT) ne 0
+                                        ifso MinFold _ FoldLevel
+                                         ifnot MinFold _ 0
+                                         let Result _ ReadLine()
+                                         BlankLine _
+                                           BlankLine &
+                                           ~BLANKBEFORE
+                                         Needs _ SaveNeeds
+                                         LeftMargin _ SaveLM
+                                         OneLineFlag _ SaveOLF
+                                         MinFold _ SaveMF
+                                         Indent _ LeftMargin
+                                         unless Result =
+                                                $*n
+                                         do resultis Result
+                                         goto ecrlp
+                                       }
+
+                           case IF:    if MinFold ge
+                                          THEN
+                                       then Backup(0)
+                                       Needs _
+                                         X &
+                                         (DOBIT\ORBIT\IFSOBIT)
+                                       FoldMargin _ NewFM
+                           default:    loop
+                         }
+                       }
+      }
+    }chlp
+    repeat
+  }
+  { let x _ Line|0 + Indent - MaxColumn + 3
+    if x >
+       0
+    then test LastFold ne 0
+         ifso { FoldLine(lv LastFold); loop }
+         ifnot Backup(x)
+    resultis Result
+  }
+  repeat
+}
+

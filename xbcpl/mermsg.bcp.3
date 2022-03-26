@@ -1,0 +1,44 @@
+
+// mermsg.bcp Make the errmsgs.bin;1 file from BCPLERRORS.DOC
+// This binary file is used by the compiler to print out useful
+// compile time error messages. Assumption is that errmsgs.bin;1 lives
+//-- in
+// the <BCPL> directory.
+// Rovner, 3/16/73
+
+get "<bcpl>head"
+get "<bcpl>utilhead"
+
+let Start() be
+{ INPUT:=FindInput("<xbcpl>bcplerrors.doc")
+  let p:=5000
+  OUTPUT:=CreateOutput("<bcpl>errmsgs.bin")
+  { let n:=ReadN()
+    sfbsz(OUTPUT,36)
+    sfptr(OUTPUT,n)
+    PBOUT(p)
+    sfbsz(OUTPUT,7)
+    sfptr(OUTPUT,p)
+    let ch:=PBIN()
+    until ch=$%\ch=$$ do
+    { PBOUT(ch)
+      p:=p+1
+      ch:=PBIN()
+      if ch=0 do Help("ch equals 0?*n")
+     }
+    PBOUT($%)
+    p:=p+1
+    if ch=$$ do break
+   }
+  repeat
+  EndWrite(OUTPUT)
+  EndRead(INPUT)
+ }
+
+and sfbsz(s,n) be
+{ let v:=vec 20
+  v|1:=s
+  v|2:=n
+  JSYS(#46,v)                   // SFBSZ
+ }
+

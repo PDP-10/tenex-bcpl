@@ -1,0 +1,456 @@
+
+
+//conc.bcp
+//program to generate a concordance of names used in a bcpl source file
+// Rovner, 7/15/73
+// To be loaded with LCONC, which is a fudge2 file
+// composed of old versions of  HANDCD, NLEX1, and NLEX2
+//  and merged before ssaving with <bcpl>compdict.sav
+
+get "<bcpl>head"
+get "<bcpl>utilhead"
+get "<bcpl>dicthead"
+get "<bcpl>freestorehead"
+get "<xbcpl>headcaecon"
+
+//definitions of globals ; these should match the global
+//  definitions for the compiler, and are used by LEX
+global
+ { OpenSource:#465
+   WriteChar:#524
+   Newvec:#547
+   LineV:#436
+   
+   Nextsymb:#430                //The LEX Interface
+   
+   Symb:#431
+   V:#432
+   Vp:#447
+   FixName:#462
+   GetP:#435
+   Chkind:#451
+   TransReport:#640
+   CAEreport:#433
+   BCPLreport:#551
+   LineP:#437
+   WUPFLG:#444
+   GetV:#434
+   GetnameV:#504
+   Curfile:#520
+   Curline:#517
+   SWupper:#554
+   
+   GetnameP:#505
+   Source:#521
+   
+//JMILLER's hooks for source file PMAPing
+   jimtbptr:#502
+   jimbytptr:#513
+   jimtbl:#514
+   
+   ReadAhead:#442
+   LastItem:#463
+   SWcontrol:#466
+   Dvec:#610
+   DvecE:#612
+   NLPending:#461
+ }
+
+//Other JMILLER hooks
+external
+ { JNDRD ; JRch}
+
+manifest
+ {
+   UNDEF_0                      //The NULL Pointer
+ }
+
+//statics for conc
+static
+ {
+   Newvec_0             //used once in LEX; set up here to call GetBlock
+   storage_#500000            //start allocating free storage space here
+   smdef_UNDEF  //in either STATIC or MANIFEST declaration...or neither (UNDEF)
+   lnm_0                        //current line number...starts at 1
+//ptrs (JMILLER keeps two) to first char on next input line
+   nextlinecp_nil
+   nextlinebp_nil
+   oldopensource_nil    //original OpenSource. Used to open source files
+   lexbool_false  //flag specifying whether DictGetFree should return a relative pointer. On for compiler dict (relative to #260000); off for conc dict.
+ }
+
+manifest
+ {                              //sizes of vectors used by LEX
+   LineT_120
+   Vmax_512
+   GetT_10
+   
+   Empty_0                      //used to init Chkind
+ }
+
+//space is allocated here for some of the statics used by LEX. Others are defined in NLEX2
+static
+ { Symb_0
+   LineP_0
+   Vp_0
+   V_0
+   GetV_0
+   GetP_0
+   LineV_0
+   WUPFLG_0
+   Chkind_0
+   GetnameV_vec 40
+   Dvec_0
+   DvecE_0
+   Curfile_nil
+   Curline_nil
+   SWupper_0
+   GetnameP_0
+   Source_-1
+   
+//space for vectors used by LEX
+   VLT_vec LineT
+   VVM_vec Vmax
+   VGT_vec GetT
+ }
+
+//read and put out the next source line
+let Start() be
+ {
+//overlay storage allocation function definitions
+   Newvec_GetBlock
+   DictGetFree_mygetblock
+   
+   let ttyin,ttyout_FindInput(0),CreateOutput(0)
+   let startbool_true  //don't ask for another file if this is the first
+   let fnm_vec 20               //vector to hold file name string
+   let numnames_0              //to determine how big the heap should be
+   oldopensource_OpenSource     //used to open the source files
+   OpenSource_OpenSrc  //disable GET; OpenSource is called from LEX for the GET directive
+   let concdict_InitDict(1000,0)  //the mechanism for relating names to their chain of usage instances is a hash dictionary
+   OUTPUT_CreateOutput(1)
+    { unless startbool do
+       {
+       l:
+         WriteS(ttyout,"*c*lanother file? (y or n):")
+         let ans_BIN(ttyin)
+         BOUT(ttyout,$*n)
+         test ans=$n \ ans=$N then break
+         or unless ans=$y \ ans=$Y do
+          { WriteS(ttyout,"??*c*l")
+            goto l
+          }
+       }
+      startbool_false
+//get the full file name
+      let jfn_FindInput(1)
+      JFNToString(jfn,fnm)
+      EndRead(jfn)
+      
+//initialize LEX variables for this source file
+      LineV_VLT
+      for n_1 to LineT do LineV|n_0
+      LineV|0_$*n
+      GetP,GetV_0,0
+      V_VVM
+      GetV_VGT
+      ReadAhead_false
+      LastItem_0
+      SWcontrol_false
+      LineP_0
+      Chkind_Empty
+      NLPending_false
+      Source_-1
+      jimtbptr_lv jimtbl
+GetnameP_0
+      jimbytptr_POINT(7,#400000)
+      
+//open this source file
+      oldopensource(fnm)
+//print the file name before putting out the line numbered listing
+      WriteS("*c*l*t*t")
+      WriteS(fnm)
+      WriteS("*c*l*c*l") 
+      let rtdefb_false          //inside a fn or rtn definition header
+      let rtlnd_-1  //to hold the lnd for the defining line of a fn or rtn name
+      let parenb_false   //inside a list of formal parameter definitions
+      let casepending_false  //to distinguish case labels from real labels
+      
+      nextlinecp,nextlinebp_INPUT|1,INPUT|0  //like rfptr
+      let realoldsymb_-1
+      let lnd_UNDEF  //to hold the line number descriptor for the current name usage instance
+      let oldsymb_-1
+       {     //flip dictionaries and call LEX for the next lexical token
+         RestoreDict(#400,#260000,1)
+         lexbool_true
+         Nextsymb()
+         lexbool_false
+         RestoreDict(1000,0,concdict)
+         
+//read and put out enuff source lines to catch up with LEX
+         while INPUT|1 > nextlinecp do getnextline()
+         if Symb eq END do break  //end of source file
+         if Symb eq RBRA do
+          { parenb_true
+            if oldsymb eq LET \ oldsymb eq AND do
+             { rtlnd_lnd
+               lnd|1_"(r)"
+             }
+          }
+         if Symb eq RKET do
+          { parenb_false
+            if oldsymb eq LET \ oldsymb eq AND do rtdefb_true
+          }
+         if Symb eq BE do rtdefb_false
+         if Symb eq CASE do casepending_true
+         if Symb eq SECTKET do smdef_UNDEF
+         if Symb eq ASS do if rtdefb do
+          { rtdefb_false
+            rtlnd|1_"(f)"
+          }
+         if Symb eq COLON do
+          { if casepending\(oldsymb eq DEFAULT) do
+             { casepending_false
+               realoldsymb_Symb
+               loop
+             }
+            unless smdef=UNDEF do loop
+            lnd|0_(lnd|0)\(#400000,,0)
+            lnd|1_"(l)"
+            realoldsymb_Symb
+            loop
+          }
+         unless Symb eq NAME do 
+          { unless Symb eq RBRA \ Symb eq COMMA \ Symb eq SEMICOLON \ Symb eq SECTBRA do oldsymb_Symb 
+            realoldsymb_Symb
+            loop
+          }
+//OK. it's a name usage instance. add an element to the chain of usage instances for the name.
+// lnd|0:  lnm,,ptr to next lnd or UNDEF
+// lnd|1:  ptr to decln code string if bit 0 of lnd|0 is a 1
+         if (realoldsymb eq SEMICOLON)&~(smdef eq UNDEF) do oldsymb_smdef
+         let nm_V|0
+         let entry_nil
+         lnd_GetBlock(2)
+         lnd|0_(lnm\((oldsymb = GLOBAL \ oldsymb eq LET \ oldsymb eq AND \ oldsymb eq EXT \ oldsymb eq FOR \ oldsymb eq STATIC \ oldsymb eq MANIFEST)=>#400000,0)),,UNDEF
+         lnd|1_selecton oldsymb into
+          {
+          default:
+            "**"
+          case LET:
+          case AND:
+            parenb=>"(d)","(v)"
+          case EXT:
+            "(e)"
+          case FOR:
+            "(i)"
+          case STATIC:
+            "(s)"
+          case MANIFEST:
+            "(m)"
+          case GLOBAL:
+            "(g)"
+          }
+         if oldsymb eq STATIC \ oldsymb eq MANIFEST \ oldsymb=GLOBAL do smdef_oldsymb
+         test Enter(nm,lv entry,2) then
+          { rh((lh(entry|1))|0)_lnd
+            lh(entry|1)_lnd
+          }
+         or
+          { entry|1_lnd,,lnd
+            numnames_numnames+1
+          }
+         realoldsymb_Symb
+       } repeat
+      WriteS("*p")
+      JNDRD(INPUT)
+    } repeat
+   
+   WriteS("*t*tCONCORDANCE*c*l*c*l")
+   WriteS("*tprefix declaration codes...*c*l")
+   WriteS("*t*te....external*c*l")
+   WriteS("*t*ts....static*c*l")
+   WriteS("*t*tm....manifest*c*l")
+   WriteS("*t*tl....label*c*l")
+   WriteS("*t*tv....(local) variable*c*l")
+   WriteS("*t*tf....function*c*l")
+   WriteS("*t*tr....routine*c*l")
+   WriteS("*t*ti....iteration index*c*l")
+   WriteS("*t*td....dummy argument*c*l")
+   WriteS("*t*tg....global*c*l")
+   WriteS("*c*l")
+//now put out the names and their list of usage instances (line number references) in alphabetical order
+   let nxt_true
+   let entry_nil
+   let n_0
+   let heap_GetBlock(numnames+20)
+   while NextDictEntry(lv nxt,lv entry) do inheap(heap,lv n,entry+1)
+   let t_n
+   for i_1 to t do
+    { let entry_nil
+      outheap(heap,lv n,lv entry)
+      WriteS("*c*l")
+      WriteS(entry+1)
+      for i_1 to 20-q4(entry|1) do WriteS("*s")
+      let lnd_rh(entry|0)
+      let chcnt_20
+      until lnd eq UNDEF do
+       {
+         let num_lh(lnd|0)
+         let dfb_num < 0
+         num_num&#377777
+         if chcnt > 60 do
+          { chcnt_20
+            WriteS("*c*l")
+            for i_1 to 20 do WriteS("*s")
+          }
+         if dfb do WriteS(rh(lnd|1))
+         WriteN(num)
+         WriteS("*s")
+         lnd_rh(lnd|0)
+         let nch_1
+         if num ge 10 do nch_nch+1
+         if num ge 100 do nch_nch+1
+         if num ge 1000 do nch_nch+1
+         chcnt_chcnt+1+(dfb=>3,0)
+         chcnt_chcnt+nch
+       }
+      WriteS("*c*l")
+    }
+   EndWrite(OUTPUT)
+ }
+
+
+and getnextline() be
+ { let ch_nil
+   let t1,t2_INPUT|0,INPUT|1
+   let b_false
+   INPUT|0,INPUT|1_nextlinebp,nextlinecp
+    {
+       { ch_JRch(INPUT)} repeatwhile ch=$*l
+      if (ch eq $*n)\(ch eq $*c)\EofFlg do break
+//for each line, increment the line number and put it out before the line
+      unless b do
+       { b_true
+         lnm_lnm+1
+         if lnm < 10 do WriteS("*s")
+         if lnm < 100 do WriteS("*s")
+         if lnm < 1000 do WriteS("*s")
+         WriteN(lnm)
+         WriteS(";*t")
+       }
+      Writech(OUTPUT,ch)
+    } repeat
+   WriteS("*c*l")
+   nextlinecp,nextlinebp_INPUT|1,INPUT|0
+   INPUT|0,INPUT|1_t1,t2
+ }
+
+and OpenSrc() be return  //a dummy for OpenSource; the "get" feature should be disabled for a concordance
+
+and DictRetFree() be Help("CONC: DictRetFree called*c*l")
+
+//The next 7 routines implement HEAPSORT and alphabetization for the names
+and swopheap(a,n,in,outlv) be
+ { test alphlesseq(in,a|1) then rv outlv_in
+   or
+    { let i_1
+      a|(n+1)_in
+      rv outlv_a|1
+    scan:
+      let j_i+i
+      if j le n do
+       { let temp_a|j
+         let temp1_a|(j+1)
+         if alphless(temp1,temp) do
+          { temp_temp1
+            j_j+1
+          }
+         if alphless(temp,in) do
+          { a|i_temp
+            i_j
+            goto scan
+          }
+       }
+      a|i_in
+    }
+ }
+
+and inheap(a,nlv,in) be
+ { let i_rv nlv+1
+   rv nlv_i
+ scan:
+   if i > 1 do
+    { let j_i/2
+      if alphless(in,a|j) do
+       { a|i_a|j
+         i_j
+         goto scan
+       }
+    }
+   a|i_in
+ }
+
+and outheap(a,nlv,outlv) be
+ { swopheap(a,(rv nlv)-1,a|(rv nlv),outlv)
+   rv nlv_rv nlv-1
+ }
+
+and setheap(a,n) be
+ { let j_1
+    { inheap(a,lv j,a|(j+1))} repeatwhile j < n
+ }
+
+and alphcpr(a,b,bl)_valof
+ { let nca,ncb_q4(a|1),q4(b|1)
+   let nch_min(nca,ncb)
+   for i_1 to nch do
+    { let ca_pullch(a+1,i)\#40
+      let cb_pullch(b+1,i)\#40
+      if ca < cb do resultis true
+      if ca eq cb do loop
+      resultis false
+    }
+   resultis (bl=>(nca le ncb),(nca < ncb))
+ }
+
+and alphlesseq(a,b)_alphcpr(a,b,true)
+
+and alphless(a,b)_alphcpr(a,b,false)
+
+and TransReport() be Help("TransReport?*c*l")
+
+and BCPLreport() be Help("BCPLreport?*c*l")
+
+and CAEreport() be Help("CAEreport?*c*l")
+
+and FixName() be return
+
+and JFNToString(jfn,string)_valof
+ { let v_vec 20
+   let v1_vec 40
+   v|1_-1,,v1
+   v|2_jfn
+   v|3_0
+   JSYS(#30,v)                  //JFNS
+   ASCIZToString(v1,string)
+   resultis string
+ }
+
+
+
+
+//for the frestr pkg
+and GetStorageSpace(npgs)_valof
+ { let t_storage
+   storage_storage+npgs*512
+   resultis t
+ }
+
+
+and WriteChar() be Help("WriteChar?*c*l")
+
+
+and mygetblock(n)_lexbool => GetBlock(n)-#260000,GetBlock(n)
+
+and pullch(s,cn)_LDB(POINT(9,s+cn/4,(cn rem 4)*9+8))

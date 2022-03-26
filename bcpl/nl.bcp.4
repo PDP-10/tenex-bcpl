@@ -1,0 +1,135 @@
+
+
+//nl.b
+// library of functions for interfacing to the network
+// rovner, 11/24/72
+
+get "<BCPL>HEAD"
+get "<BCPL>NLHEAD"
+get "<BCPL>UTILHEAD"
+
+static
+ { localsocketdflt_20
+    NETLOCALSOCKET_0,,-1
+   NETINOPENF2_#3000200000
+   NETOUTOPENF2_#3000100000
+   NETWAITTIME_20000
+   NETPOLLTIME_5000
+   NETWAITFLAG_true
+
+ }
+
+//uses CVSKT. Returns absolute local socket #, or negative CVSKT error #
+let LocalSocket(jfn)_valof
+ { let v_vec 20
+   v|1_jfn
+   unless JSYS(#275,v)=2 do resultis -(v|1)	//CVSKT
+   resultis v|2
+ }
+
+and CreateNetDialogue(host,oslv,islv,lskt,entr)_valof
+ { let v1_vec 20
+   let v_vec 20
+   test NumbArgs() eq 3\((NumbArgs()=5)&(lskt<0)) then
+    { localsocketdflt_localsocketdflt+2
+      v|2_localsocketdflt
+    }
+   or v|2_lskt
+
+   v|4_(NumbArgs()=5)=>entr,1
+   v|3_((lh host)<0)=>(-1,,StringToASCIZ(rh host,v1)),host
+   let t_ACCall((lh BOUT),,lv DOICP,v)
+   unless t=2 do resultis v|1
+   rv oslv_lh v|1
+   rv islv_rh v|1
+   resultis 0
+ }
+
+and NetStatus(stream,v)_valof
+ { v|1_stream
+   JSYS(#145,v)
+   v|1_LDB(POINT(4,v+2,3))
+   v|2_LDB(POINT(6,v+2,17))
+   resultis v
+ }
+
+and EndNetDialogue(outs,ins) be
+ { EndRead(ins,#200000)	// Wait For It To Close
+   EndWrite(outs,#200000)	// Ditto
+ }
+
+and NETIO(na,niflg,bytesize,horls,a1,a2,a3,a4,a5)_valof
+ { let cv_vec 20
+   test horls=LISTENING then
+    { switchon na into
+       { default: Help(2)
+         case 2: a1_NETLOCALSOCKET
+         case 3: a2_(niflg=> NETINOPENF2,NETOUTOPENF2)
+         case 4: a3_NETWAITTIME
+         case 5: a4_NETPOLLTIME
+         case 6:
+         
+       }
+      switchon bytesize into
+       { default: bytesize_36
+         case 8: case 32: case 36:
+       }
+DPB(bytesize,POINT(6,lv a2,5))
+      cv|2,cv|3,cv|4_a1,0,0
+      if ACCall((lh BOUT),,lv NTGJFN,cv)=1 do resultis -cv|1
+      let jfn_cv|1
+      cv|2,cv|3,cv|4_a2,a3,a4
+      if NETWAITFLAG do
+       { if ACCall((lh BOUT),,lv NTOPNF,cv)=1 do resultis -cv|1
+         resultis jfn
+       }
+      lh cv|2_(lh cv|2)\#3000
+      if JSYS(#21,cv)=1 do resultis -cv|1	//OPENF
+      resultis jfn
+    }
+   or
+    { let nm_vec 20
+      switchon na into
+       { default: Help(2)
+         case 3: a2_NETLOCALSOCKET
+         case 4: a3_(niflg=>NETINOPENF2,NETOUTOPENF2)
+         case 5: a4_NETWAITTIME
+         case 6: a5_NETPOLLTIME
+         case 7:
+       }
+      switchon bytesize into
+       { default: bytesize_36
+         case 8: case 32: case 36:
+       }
+DPB(bytesize,POINT(6,lv a3,5))
+      cv|2,cv|3,cv|4_a2,(((lh horls)=0)=>horls,(-1,,StringToASCIZ(rh horls,nm))),a1
+      if ACCall((lh BOUT),,lv NTGJFN,cv)=1 do resultis -cv|1
+      let jfn_cv|1
+      cv|2,cv|3,cv|4_a3,a4,a5
+      if NETWAITFLAG do
+       { if ACCall((lh BOUT),,lv NTOPNF,cv)=1 do resultis -cv|1
+         resultis jfn
+       }
+      if JSYS(#21,cv)=1 do resultis -cv|1	//OPENF
+      resultis jfn
+    }
+   
+ }
+
+and FindNetInput(a1,a2,a3,a4,a5,a6,a7)_NETIO(NumbArgs(),true,a1,a2,a3,a4,a5,a6,a7)
+
+and CreateNetOutput(a1,a2,a3,a4,a5,a6,a7)_NETIO(NumbArgs(),false,a1,a2,a3,a4,a5,a6,a7)
+
+
+and InitNetLibrary() be
+ { ACCall((lh BOUT),,lv LBINIT)
+    NETLOCALSOCKET_0,,-1
+   NETINOPENF2_#3000200000
+   NETOUTOPENF2_#3000100000
+   NETWAITTIME_20000
+   NETPOLLTIME_5000
+   NETWAITFLAG_true
+
+
+ }
+

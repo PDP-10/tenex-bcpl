@@ -1,0 +1,161 @@
+
+// dict.bcp
+
+get "<bcpl>head"
+get "<bcpl>dicthead"
+get "<bcpl>utilhead"
+
+static
+ { item_0
+   Offset_0
+   hashsize_0
+   hs_0
+   nxthash_0
+   hashstart_0
+   datalength_0
+   addr_0
+   blocksize_0
+   vallv_0
+   backptr_0
+   ptr_vec 15
+ }
+
+external
+ { TBP }
+
+manifest
+ { EMPTY_#377777
+   NXTSIZE_3
+ }
+let nxthash()_valof
+ { h_(h>NXTSIZE)=>NXTSIZE,1
+   resultis h
+ }
+
+and InitDict(hashsz,offst)_valof
+ { Offset_offst
+   hashsize_hashsz
+   if (hashsize rem 3)=0 do hashsize_hashsize-1
+   h_hashsize
+   gethash()
+   hashstart_addr
+   resultis hashstart
+ }
+
+and RestoreDict(hashsz,offst,hashst)_valof
+ { Offset_offst
+   hashsize_hashsz
+   if (hashsize rem 3)=0 do hashsize_hashsize-1
+   h_hashsize
+   hashstart_hashst
+   resultis hashsize
+ }
+
+and gethash()_valof
+ { addr_DictGetFree(h)
+   for i_0 to h-1 do addr|(Offset+i)_EMPTY,,EMPTY
+   resultis addr+Offset
+ }
+
+and Enter(wrd,vlv,dln)_valof
+ { datalength_dln
+   resultis search(wrd,vlv,false)
+ }
+
+and Find(wrd,vlv)_search(wrd,vlv,true)
+
+and search(wrd,vlv,mode)_valof
+ { wrrd_wrd
+   vallv_vlv
+   hs_hashstart
+   h_hashsize
+   stringlength_(q4z wrrd|0)/4
+   unless mode do blocksize_stringlength+1+datalength
+
+top:
+   { item_TBP()+hs+Offset
+     if rh item|0=EMPTY do break
+     addr_rhz item|0
+     if Eqstr(wrrd,addr+Offset+q1z(addr|Offset)) do
+      { rv vallv_addr
+        resultis true
+      }
+     if lh item|0=EMPTY do goto ncp
+     hs_lhz item|0
+     backptr_item
+     nxthash()
+   } repeat
+   if mode do resultis false
+   addr_DictGetFree(blocksize)
+   rh rv item_addr
+   for i_0 to stringlength do rv(addr+Offset+datalength+i)_wrrd|i
+   rv vallv_addr
+   q1 addr|Offset_datalength
+   resultis false
+
+ncp:
+   if mode do resultis false
+   nxthash()
+   gethash()
+   lh item|0_addr
+   hs_addr
+   goto top
+ }
+
+and Delete(str, lvPtr) := valof
+{ unless Find(str, lvPtr) resultis false
+  DictRetFree(rhz item|0)
+  rh item|0 := EMPTY
+  if lh item|0=EMPTY do
+  { unless h=hashsize do	// don't delete main table
+    { if Bubble(Offset+hs, h, 0) do lh backptr|0 := EMPTY }
+    resultis true
+  }
+  item|0 := Bubble(Offset+lhz item|0, nxthash())
+  resultis true
+}
+
+and Bubble(Table, Length) := valof
+{ let Result, NoBubble := -1, NumbArgs()=3
+  for i := 0 to Length-1 do
+  { if rh Table|i=EMPTY loop
+    if NoBubble resultis false	// not empty table
+    if Result ne -1 resultis (Table-Offset),,Result
+    rh Result := rhz Table|i
+    if lh Table|i=EMPTY loop
+    Table|i := Bubble(Offset+lhz Table|i, nxthash())
+  }
+  DictRetFree(Table)
+  resultis NoBubble => true, EMPTY,,Result
+}
+
+
+
+and NextDictEntry(firstblv,entrylv)_valof
+ { static{ stak_vec 20}
+   let ntry_nil
+   if rv firstblv do
+    { stak|0_1	//ptr to current level
+      stak|1_hashstart
+      rv firstblv_false 
+    }
+   { if (lhz stak|(stak|0)) ge ((stak|0=1)=>hashsize,((stak|0=2)=>NXTSIZE,1)) do
+      { stak|0_stak|0-1
+        if stak|0 le 0 do resultis false
+        loop
+      }
+     ntry_(lhz stak|(stak|0)+rhz stak|(stak|0))|Offset
+     lh stak|(stak|0)_lh stak|(stak|0)+1
+     unless rh ntry=EMPTY do break
+   } repeat
+   rv entrylv_rhz ntry
+   if lh ntry=EMPTY do resultis true
+   stak|0_stak|0+1
+   if stak|0 > 20 do
+    { Help("Stak Overflow in NextDictEntry*n")
+      resultis false
+    }
+   stak|(stak|0)_lhz ntry
+   resultis true
+ }
+

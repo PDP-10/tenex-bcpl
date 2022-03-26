@@ -1,0 +1,176 @@
+
+// BCPL Compiler -- CAE Part 1.
+
+// Readblockbody   Read the body of a block.
+// Rblock          Read a block.
+// *Rextlist        Read external list.
+// Rnamelist       Read a name list.
+// EqVec           Test two vectors for equality.
+// * => local to this file.
+
+get "<xbcpl>headcae"
+get "<bcpl>head"
+
+let Readblockbody() := valof
+{ let A, B, Cdefs, Op := 0, nil, 0, nil
+  let Thisline := LinePtr()
+  switchon Symb into
+  { case MANIFEST:
+    case STATIC:
+    case INDEX:
+    case GLOBAL:
+                    { let V1 := vec BRACKETLABEL
+                      Op := Symb
+                      Nextsymb()
+                      unless Symb eq SECTBRA do
+                      { CAEreport(2); resultis 0
+                       }
+                      for k := 0 to V|0 do V1|k := V|k
+                      { Nextsymb()
+                        let TL := LinePtr()
+                                // Pointer into source text.
+                        test Symb eq NAME
+                        ifso A := List2(NAME, V|0)
+                        ifnot { CAEreport(1); A := ERRORNAME }
+                        Nextsymb()
+                        unless Symb eq ASS \ Symb eq COLON
+                        do CAEreport(3)
+                        Nextsymb()
+                        B := Rexp(0)
+                        Cdefs := List4(CONSTDEF, Cdefs, A, B)
+                        Cdefs := List3(LINE, TL, Cdefs)
+                       }
+                      repeatwhile Symb eq SEMICOLON
+                      unless Symb eq SECTKET do
+                      { CAEreport(4); resultis 0
+                       }
+                      test EqVec(V1) then Nextsymb()
+                      or CAEreport(4,,69)
+                     }
+                    A := Readblockbody()
+                    A := List3(Op, Cdefs, A)
+                    resultis List3(LINE, Thisline, A)
+
+    case STRUCTURE:             // A structure declaration.
+                    { let V1 := vec BRACKETLABEL
+                      Nextsymb()
+                      unless Symb eq SECTBRA do
+                      { CAEreport(2); resultis 0
+                       }
+                      for k := 0 to V|0 do V1|k := V|k
+                      Nextsymb()
+                      A := Rstruct(0)
+                                // Read the declaration.
+                      unless Symb eq SECTKET do
+                      { CAEreport(4); resultis 0
+                       }
+                      test EqVec(V1) then Nextsymb()
+                      or CAEreport(4,,69)
+                     }
+                    B := Readblockbody()
+                    A := List3(STRUCTURE, A, B)
+                    resultis List3(LINE, Thisline, A)
+
+    case LET:       Nextsymb()
+                    A := Rdef()
+                    B := Readblockbody()
+                    A := List3(LET, A, B)
+                    resultis List3(LINE, Thisline, A)
+
+    case EXT:
+                    { let V1 := vec BRACKETLABEL
+                      Nextsymb()
+                      unless Symb eq SECTBRA do
+                      { CAEreport(2); resultis 0
+                       }
+                      for k := 0 to V|0 do V1|k := V|k
+                      Nextsymb()
+                      A := Rextlist()
+                      unless Symb eq SECTKET do
+                      { CAEreport(4); resultis 0
+                       }
+                      test EqVec(V1) then Nextsymb()
+                      or CAEreport(4,,69)
+                     }
+                    B := Readblockbody()
+                    A := List3(EXT, A, B)
+                    resultis List3(LINE, Thisline, A)
+
+    case SECTKET:
+    case END:       resultis A
+
+    case SEMICOLON: Nextsymb()
+                    resultis Readblockbody()
+
+    default:        A := Rcom(Readblockbody)
+                    while Symb eq SEMICOLON do
+                    { Nextsymb()
+                      B := Readblockbody()
+                      A := List3(SEQ, A, B)
+                     }
+                    resultis A
+   }
+ }
+
+and Rblock() := valof
+{ let V1 := vec BRACKETLABEL
+  unless Symb eq SECTBRA do { CAEreport(6); resultis 0 }
+  for k := 0 to V|0 do V1|k := V|k
+  Nextsymb()
+  let A := Readblockbody()
+  unless Symb eq SECTKET do
+  { CAEreport(Symb eq END => 98, 7)
+    Nextsymb()
+    resultis A
+   }
+  test EqVec(V1) then Nextsymb()
+  or CAEreport(4,,69)
+  resultis A
+ }
+
+and Rextlist() := valof
+{ unless Symb eq NAME do
+  { CAEreport(8)
+    Nextsymb()
+    resultis ERRORNAME
+   }
+  let A := List2(NAME, V|0)
+  Nextsymb()
+  unless Symb eq SEMICOLON resultis A
+  Nextsymb()
+  let B := Rextlist()
+  resultis List3(COMMA, A, B)
+ }
+
+and Rnamelist() := valof
+{ let A, B := nil, nil
+  test Symb eq NIL
+  then
+  { A := NILNODE
+    Nextsymb()
+    if Symb eq REPNAME \ Symb eq REPVAL do
+    { Nextsymb()
+      B := Rexp(12)
+      A := List3(REPNAME, A, B)
+     }
+   }
+  or
+  { unless Symb eq NAME do
+    { CAEreport(8)
+      Nextsymb()
+      resultis ERRORNAME
+     }
+    A := List2(NAME, V|0)
+    Nextsymb()
+   }
+  unless Symb eq COMMA resultis A
+  Nextsymb()
+  B := Rnamelist()
+  resultis List3(COMMA, A, B)
+ }
+
+and EqVec(v) := valof
+{ for k := 0 to v|0 if v|k ne V|k resultis false
+  resultis true
+ }
+

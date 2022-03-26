@@ -1,0 +1,310 @@
+
+// <BCPL>DO.BCP;10    28-MAR-74 00:18:58 EDIT BY ROVNER
+// Changes for %^, and for the DO interrupt character.
+
+// DO.BCP -- A Better Runfil for TENEX
+// Rovner, 3/24/73
+
+get "<bcpl>head"
+get "<bcpl>utilhead"
+get "<bcpl>dicthead"
+get "<bcpl>psihead"
+get "<bcpl>openfilehead"
+
+manifest
+{                               // AC numbers for results from GJINF
+  JOBN _    3
+  LOGDIR _  1
+  CONNDIR _ 2
+  TTYN _    4
+
+  EOFCHNL _ 10                  // PSI channel number for EOF interrupt
+
+  PVECLN _  1000                // size of free space for parameter
+                                //-- strings and the dict.
+ }
+
+static
+{ pvec:   vec PVECLN            // free storage space for parameter
+                                //-- strings and
+                                // the dictionary
+
+// console I/O streams
+
+  ttyout: 0
+  ttyin:  0
+  fh:     0                     // fork handle for lower EXEC fork
+  io:     0                     // lh will have jfn for primary input
+                                //-- file for lower fork
+ }
+
+let Start() be
+{ let pn_0                      // holds the largest numerical
+                                //-- parameter # found so far
+  let intchar_$B                // default interrupt control character
+                                // Init. the Dictionary
+  pvec|0_pvec+20                // space for string ptrs for
+                                //-- numerically
+                                // specified parameters
+  InitDict(20,0)
+  ttyin_FindInput(0)
+  ttyout_CreateOutput(0)
+  OUTPUT_CreateOutput("do.xpstr;-1;t")
+                                // file used to hold the
+                                // expanded string for primary
+                                // input in the lower fork.
+
+// get the EXACT file name of the file which will hold the
+                                // expanded string
+  let xpstr_vec 20
+  { let v_vec 20
+    let x_vec 20
+    v|2_OUTPUT
+    v|3_0
+    v|1_-1,,x
+    JSYS(#30,v)                 // JFNS
+    IDPB(0,v+1)
+    ASCIZToString(x,xpstr)
+   }
+
+// open the source file, and expand the string in it
+                                // into the output (xpstr) file.
+  { INPUT_OpenFile(ofRead,2,7,".do",ofOldFile)
+if INPUT>0 then break
+WriteS(ttyout,"Name Bad. Again: ")
+} repeat
+  BOUT(ttyout, $*n)
+  let ch_nil
+  { Readch(INPUT,lv ch)
+    if EofFlg do break
+    if ch=$%
+    do
+    { Readch(INPUT,lv ch)
+      test isnumber(ch) do
+      { let thispn_ch&#17       // limit: 9 parameters
+        if thispn > pn do
+        { for i_pn+1 to thispn do readparameter(i)
+          pn_thispn
+         }
+        WriteS(pvec|thispn)
+        loop
+       }
+      or switchon ch into
+      { case $%: PBOUT($%) ;loop
+
+case $*^: PBOUT(PBIN()&#37) ; loop
+
+case $b:
+        case $B:
+                 intchar_PBIN() ; loop
+
+        case $D:
+        case $d:
+                 { let v_vec 20
+                   WriteS(MakeDate(v))
+                   loop
+                  }
+        case $J:
+        case $j: WriteN(gjinfo(JOBN)) ; loop
+
+        case $L:
+        case $l: wdir(LOGDIR) ; loop
+
+        case $C:
+        case $c: wdir(CONNDIR) ; loop
+
+        case $T:
+        case $t:
+                 { let t_gjinfo(TTYN)
+                   test t=-1 then WriteS("(detached)")
+                   or WriteOct(t)
+                  }
+        case $R:
+        case $r:
+                 { let v_vec 20
+                   v|1_-5
+                   JSYS(#15,v)  // RUNTM
+                   WriteN(v|1)
+                   WriteS("*sms")
+                   loop
+                  }
+
+        default:
+                 {              // read the param name, look it up, if
+                                //-- found, output the
+                                // param text; otherwise, get param
+                                //-- text and enter it
+                                // with the name in the dict and output
+                                //-- it.
+                   let firstch_ch
+                   let v_vec 200
+                   let str_vec 50
+                   v|0_0
+                   ch_PBIN()
+                   until ch=firstch
+                   do
+                   { v|0_v|0+1
+                     if v|0>190
+                     do Help("DO: parameter descriptor string is too long*n") repeat
+                     v|(v|0)_ch
+                     ch_PBIN()
+                    }
+                   Packstring(v,str)
+                   let val_0
+                   let t_Enter(str,lv val,1)
+                                // true => parameter
+                                // already gotten
+                   unless t do lh val|0_readparameter(str)
+                   WriteS(lh val|0)
+                   loop
+                  }
+       }                        // end switchon
+     }                          // end ch=$%
+    if ch=$*c do
+    { Readch(INPUT,lv ch)
+      test ch=$*l then ch_$*n
+      or Writech(OUTPUT,$*c)
+     }
+    Writech(OUTPUT,ch)
+   }
+  repeat                        // go get the next char from the input
+                                //-- file
+
+// Done expanding the text into the output file
+
+  EndRead(INPUT)
+  EndWrite(OUTPUT)
+  WriteS(ttyout,"DO interrupt character:*s*^")
+  BOUT(ttyout,intchar)
+  BOUT(ttyout,$*n)
+  let v_vec 20
+  v|1_#200000,,0                // Make a lower fork
+  unless JSYS(#152,v)=2 do Help("CFORK failed*n")
+  fh_v|1
+  v|1_#100001,,0
+  v|2_-1,,'<system>exec.sav'
+  unless JSYS(#20,v)=2 do Help("GTJFN failed*n")
+  v|1_fh,,rh v|1                // Set up the EXEC in it
+  JSYS(#200,v)                  // get
+  v|1_#400000
+  JSYS(#206,v)                  // gpjfn
+  v|1_fh                        // Open the expanded string file for
+                                //-- read
+  lh v|2_FindInput(xpstr)
+  io_v|2                        // Set this to be the primary INPUT jfn
+                                //-- for the lower fork
+  JSYS(#207,v)                  // spjfn
+
+// disable ^c for lower fork
+
+  v|1_fh
+  JSYS(#150,v)                  // RPCAP
+  v|2_v|2&#377777777777
+  v|1_fh
+  JSYS(#151,v)                  // EPCAP
+
+// Enable this fork for EOF at level 2 ;
+                                // when the EOF interrupt occurs, call
+                                //-- fini
+  PSIOn()
+  PSISetCh(2,EOFCHNL,fini)
+
+  let chnl_1
+  ATI(intchar&#37,chnl)
+  PSISetCh(2,chnl,fini1)        // Make sure this fork gets the EOF
+                                //-- interrupt, not
+                                // the lower fork
+  v|1_fh
+  v|2_#200200,,0                // bit 10, EOF trap and bit 1, channel
+                                //-- 1 trap for interrupt character
+  JSYS(#142,v)                  // SIRCM
+                                // start up the lower fork
+  v|1_fh
+  v|2_0
+  JSYS(#201,v)                  // sfrkv
+
+// wait for the lower fork to terminate, or for EOF
+
+  v|1_fh
+  JSYS(#163,v)                  // wfork
+
+  fini()
+ }
+
+// This is called by the dict pkg to allocate storage.
+
+and DictRetFree() be Help("DO: DictRetFree was called!!!*n")
+
+and DictGetFree(n)_valof
+{ let val_pvec|0+1
+  pvec|0_pvec|0+n+1
+  resultis val
+ }
+
+// a predicate
+
+and isnumber(ch)_$1 le ch le $9
+
+// parameters are "words" optionally preceded by *s, *t, *c, *l, *n
+// and followed by one of these
+
+and readparameter(i) _valof
+{ let ch_nil
+  let t1,t2_OUTPUT,INPUT
+  OUTPUT,INPUT_ttyout,ttyin
+  test i le 9 then
+  { WriteS("P")
+    WriteN(i)
+   }
+  or WriteS(i)
+  WriteS(":*s")
+  let s1_pvec|0
+  ReadWord(INPUT,s1)
+  pvec|0_pvec|0+(q4 s1|0)/4+1
+  if pvec|0>pvec+PVECLN-10
+  do Help("DO: out of string storage space*n") repeat
+  if i le 9 do pvec|i_s1
+  OUTPUT,INPUT_t1,t2
+  resultis s1
+ }
+
+// Get job info
+
+and gjinfo(x)_valof
+{ let v_vec 20
+  JSYS(#13,v)                   // GJINF
+  resultis v|x
+ }
+
+// Kill the lower fork, delete the temporary file
+                                // and HALTF. This fn is called when
+                                //-- the lower fork terminates,
+                                // or when an EOF interrupt occurs.
+and fini() be
+{ let v_vec 20
+  v|1_fh
+  JSYS(#153,v)                  // kfork
+
+  v|1_lh io
+  unless JSYS(#26,v)=2 do Help("DO: DELF failed*n")
+  WriteS(ttyout,"Did.*n")
+  finish repeat
+ }
+
+and fini1() be
+{ WriteS(ttyout,"Interrupted from DO*n*^C*n")
+  let v_vec 20
+  v|1_FindInput(0)
+  JSYS(#100,v)                  // CFIBF ; clear the tty input buffer
+  finish
+ }
+
+// Write the directory name (a string) corresponding to
+                                // the given directory number.
+and wdir(x) be
+{ let v_vec 20
+  v|1_OUTPUT
+  v|2_gjinfo(x)
+  unless JSYS(#41,v)=2 do Help("DO: DIRST failed*n")
+ }
+

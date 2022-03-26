@@ -1,0 +1,16 @@
+
+// stringhead.b
+global
+ { scanuntil:8106
+   scanpastst:8107
+   changesubstr:8108
+   append:8109
+   findsubstr:8110
+   putch:8111
+   pullch:8112
+   addch:8113
+   txttoint:8114
+   inttotxt:8115
+   inttoocttxt:8116
+ }
+

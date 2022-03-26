@@ -1,0 +1,94 @@
+get "<bcpl>head"
+external
+{ Write
+    WriteTo
+ }
+
+// //  Simple formatted Output Routine
+// The functions Write, and WriteTo take arguments as follows:
+// Write(ascizstring,arg1,arg2, ... )
+// WriteTo(stream,ascizstring,arg1,arg2, ... )
+// The ascizstring is sent character by  character  to  the  appropriate
+// output  stream until the character : is seen. The next character is a
+// format character which describes how the corresponding <arg> is to be
+// printed. Format characters are as follows:
+// S s	print a string
+// A a	print an asciz string
+// C c	print a single character
+// :	print a colon
+// N n	print a decimal number
+// O o	print an octal number
+// X x	print the left half (octal) then 2 commas then the right half
+// G g	skip the argument
+// W w	use the arg as a descriptor string to apply to the args
+// 	which follow. Upon termination of the string 'control'
+// 	goes back to the original format string.
+// (	The arg points to a vector. Use the format string between this
+// 	( and the corresponding :)  as a format string for that vector.
+// )	see above
+// eg	Write('The :s in :( :a falls :a :) i:c the plain',"rain",
+//		(table 'spain','mainly'), $n )
+//	will write: The rain in spain falls mainly in the plain
+
+let WriteV(form,arg) _ valof
+{ let c:=ILDB(lv form)
+  switchon c into
+  { case 0: resultis arg
+
+    default:
+            PBOUT(c);loop
+
+    case $::
+            switchon ILDB(lv form) into
+            { case $S:
+              case $s:         WriteS(rv arg);endcase
+
+              case $C:
+              case $c:         PBOUT(rv arg); endcase
+
+              case $::         PBOUT($:); loop
+
+              case $N:
+              case $n:         WriteN(rv arg); endcase
+
+              case $A:
+              case $a:
+                               { let a:=POINT(7,rv arg)
+                                 { let c:=ILDB(lv a)
+                                   if c=0 break
+                                   PBOUT(c)
+                                  }
+                                 repeat
+                                }
+                               endcase
+
+              case $W:
+              case $w:         arg:=WriteV(POINT(7,rv arg),arg+1);loop
+	      case $):  resultis form
+	      case $(:  form := WriteV(form,rv arg); endcase
+	      case $X:
+	      case $x:  WriteOct(lhz rv arg); WriteS(",,"); WriteOct(rhz rv arg); endcase
+
+              case $O:
+              case $o:         WriteOct(rv arg); endcase
+
+              case $G:
+              case $g:         endcase
+
+              default:         PBOUT(LDB(form));loop
+             }
+            arg:=arg+1
+   }
+ }
+repeat
+
+let Write(format,args,nil repname 40) be WriteV(POINT(7,format),
+                                                lv args)
+
+let WriteTo(stream,format,args,nil repname 40) be
+{ let o:=OUTPUT
+  OUTPUT:=stream
+  WriteV(POINT(7,format),lv args)
+  OUTPUT:=o
+ }
+

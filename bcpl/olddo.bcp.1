@@ -1,0 +1,153 @@
+
+// DO.BCP -- A Better Runfil for TENEX
+// Rovner, 3/24/73
+
+get "<bcpl>head"
+get "<bcpl>utilhead"
+get "<bcpl>dicthead"
+
+manifest{ XSIZE_200	// size of the buffer for the expanded
+				// string (unpacked).
+   }
+
+static{ pvec_vec 1000
+   ttyout_0
+   ttyin_0
+txvec_vec XSIZE}
+
+let Start() be
+ { let pn_0
+    // Init. the Dictionary
+   pvec|0_pvec+20
+   InitDict(20,0)
+   txvec|0_0
+   ttyin_FindInput(0)
+   ttyout_CreateOutput(0)
+   OUTPUT_CreateOutput(-buildtxv)
+   INPUT_FindInput(1)
+   let ch_nil
+   Readch(INPUT,lv ch)
+   until EofFlg do
+    { if ch=$% do
+       { Readch(INPUT,lv ch)
+         test isnumber(ch) do
+          { let thispn_ch&#17
+              //limit: 9 parameters
+            if thispn > pn do
+             { for i_pn+1 to thispn do readparameter(i)
+               pn_thispn
+             }
+            WriteS(pvec|thispn)
+            Readch(INPUT,lv ch)
+            loop
+          }
+         or
+          { unless ch=$% do 
+             { // read the param name, look it up, if found, output the 
+               // param text; otherwise, get param text and enter it
+               // with the name in the dict and output it.
+               let firstch_ch
+               let v_vec 200
+               let str_vec 50
+               v|0_0
+               ch_PBIN()
+               until ch=firstch do
+                { v|0_v|0+1
+                  if v|0>190 do Help("DO: parameter descriptor string is too long*n") repeat
+                  v|(v|0)_ch
+                  ch_PBIN()
+                }
+               Packstring(v,str)
+               let val_0
+               let t_Enter(str,lv val,1)
+               unless t do lh val|0_readparameter(str)
+               WriteS(lh val|0)
+   Readch(INPUT,lv ch)
+               loop
+             }
+            Writech(OUTPUT,$%)
+   Readch(INPUT,lv ch)
+            loop
+          }
+         
+       }
+
+      Writech(OUTPUT,ch)
+      Readch(INPUT,lv ch)
+    }
+   EndWrite(INPUT)
+   INPUT_ttyin
+
+   Wait(2000)
+   if IsCharInput(INPUT) do
+    { for i_1 to 10 do Writech(ttyout,$^g)
+      Wait(2000)
+      EchoMode(false)
+      while IsCharInput(INPUT) do { Writech(OUTPUT,BIN(INPUT))}
+      EchoMode(true)
+    }
+
+   EndWrite(OUTPUT)
+
+   OUTPUT_CreateOutput(-sendchar)
+   if txvec|0>119 do
+     { WriteS(ttyout,"^g^g*nThe following characters overflowed the TTY input buffer*nand were not put out by DO:*n")
+       for i_120 to txvec|0 do Writech(ttyout,txvec|i)
+       txvec|0_120
+     }
+    
+   for i_1 to txvec|0 do Writech(OUTPUT,txvec|i)
+   EndWrite(OUTPUT)
+ }
+
+
+
+and DictGetFree(n)_valof
+ { let val_pvec|0+1
+   pvec|0_pvec|0+n+1
+   resultis val
+ }
+
+and buildtxv(bs,ch) be
+ { txvec|0_txvec|0+1
+   if txvec|0>XSIZE-5 do
+    Help("DO: expanded string is too long*n") repeat
+   txvec|(txvec|0)_ch
+ }
+
+and sendchar(bs,ch) be
+ { let v_vec 20
+   if ch=$*l do return
+   v|1_INPUT
+   v|2_ch
+   JSYS(#114,v)
+ }
+
+
+and isnumber(ch)_$1 le ch le $9
+
+
+
+//parameters are "words" optionally preceded by *s, *t, *c, *l, *n
+// and followed by one of these
+and readparameter(i) _valof
+ { let ch_nil
+   let t1,t2_OUTPUT,INPUT
+   OUTPUT,INPUT_ttyout,ttyin
+   test i le 9 then
+    { WriteS("P")
+      WriteN(i)
+    }
+   or 
+      WriteS(i)
+   WriteS(":*s")
+   let s1_pvec|0
+   ReadWord(INPUT,s1)
+   pvec|0_pvec|0+(q4 s1|0)/4+1
+   if pvec|0>pvec+990 do Help("DO: out of string storage space*n") repeat
+   if i le 9 do pvec|i_s1
+   OUTPUT,INPUT_t1,t2
+   resultis s1
+ }
+ 
+

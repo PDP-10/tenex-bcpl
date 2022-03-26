@@ -1,0 +1,639 @@
+
+// BCPL Compiler -- Code Generator Master Switch.
+
+// Scan  --  Read all the OCODE and call the routines that process it.
+
+get "<xbcpl>headcg"
+
+//local statics
+static
+{ LastOffset : -1               // Value of SSP at last LINE item.
+  LastOffA :   -1               // Value of OffA at last LINE.
+  LastLine :   -1               // Last LINE number.
+ }
+let Scan() be
+{scan
+Next:                           // Come here to read the next OCODE
+                                //-- item.
+  Op := Readop()
+
+L:                              // Come here to branch on the OCODE
+                                //-- item in Op.
+  switchon Op into
+  { default:          Report(303)
+                      { let a := OUTPUT
+                        OUTPUT := MONITOR
+                        WriteOct(Op)
+                        Writech(OUTPUT,$*n)
+                        OUTPUT := a
+                       }
+                      goto Next
+
+    case LINE:                  // Line number.
+                      { Curline := ReadNM()
+                                // Read the line ID.
+                        if SWbits << SW.MACfil & Curline ne LastLine do
+                        { WriteS("*n*t;*s")
+                          Wfline(Curline)
+                         }
+                        LastLine := Curline
+                        unless SWbits << SW.Symtab goto Next
+                                // All done if not creating a symbol
+                                //-- table.
+                        unless OutA|Off eq LastOffA do
+                        { SymtabStoreCommand(Curline, OutA|Off)
+                          LastOffA := OutA|Off
+                         }
+                        if SSP eq LastOffset do goto Next
+
+                                                // No change in SSP.
+                        SymtabStoreStack(SSP, OutA|Off)
+                                // Report change in stack offset.
+                        LastOffset := SSP
+                                // Remember the new value.
+                        goto Next
+                       }
+
+    case DECL:        if SWbits << SW.Symtab do SymtabStoreILC(ReadNM(), OutA|Off, OutB|Off)
+                      goto Next
+
+    case INT:
+                      { let n:=ReadNM()
+                        let l:=ReadL()
+                        let v:=vec 20
+                        let v1:=vec 20
+                        v|0:=n
+                        for i:=1 to n do Readch(INPUT,v+i)
+                        Packstring(v,v1)
+                        WRINT(v1,l)
+                        goto Next
+                       }
+
+    case EXT:
+                      { let n:=ReadNM()
+                        let l:=ReadL()
+                        let v:=vec 20
+                        let v1:=vec 20
+                        v|0:=n
+                        for i:=1 to n do Readch(INPUT,v+i)
+                        Packstring(v,v1)
+                        WREXT(v1,l)
+                        goto Next
+                       }
+
+    case BLOCK:
+                      { let n:=Readop()
+                        and a:=nil
+                        switchon n into
+                        { default:
+                            a:=OUTPUT
+                            OUTPUT:=MONITOR
+                            WriteS("*nUnknown BLOCK number: ")
+                            WriteOct(a)
+                            WriteS(", taken to be 1: Impure*n")
+                            OUTPUT:=a
+                          case 1:
+                            WRIMP()
+                            goto Next
+                          case 0:
+                                // Pures
+                            WRPU()
+                         }
+                        goto Next
+                       }
+
+    case END:         return
+
+    case GLOBAL:
+                      { let n:=ReadNM()
+                        let l:=ReadL()
+                        NoteGlobal(n,l)
+                        goto Next
+                       }
+
+    case RVCB:        Op:=RVCN
+                      CGrvcandrvcn(1)
+                      goto Next
+
+    case CFGB:        Op:=CFGN
+                      CGcfgandcfgn(1)
+                      goto Next
+
+    case SPC:
+    case SGC:
+    case SLC:         CGspcandslc(Readop())
+                      goto Next
+
+    case STINDC:      CGstindc()
+                      goto Next
+
+    case RVC:
+    case RVCN:        CGrvcandrvcn(Readop())
+                      goto Next
+
+    case CFG:
+    case CFGN:        CGcfgandcfgn(Readop())
+                      goto Next
+
+    case LX:
+    case SX:
+    case SXQ1:
+    case SXQ2:                  // Not yet implemented. ::::::: :::::::
+                                //-- ::::::: ::::::: ::::::: :::::::
+                      ReadNM()
+                      Report(-1)
+                      goto Next
+
+    case LG:          LoadT(GLOBAL, ReadNM())
+                      goto Next
+
+    case LP:          LoadT(LOCAL, ReadNM())
+                      goto Next
+
+    case LL:          LoadT(LABEL, ReadL())
+                      goto Next
+
+    case LC:
+    case NUMBARGS:
+    case LN:          LoadT(NUMBER, ReadNM())
+                      goto Next
+
+    case LZTR:
+    case LSTR:        CGstring(ReadNM(),Op=LSTR)
+                      goto Next
+
+    case TRUE:        LoadT(NUMBER, true)
+                      goto Next
+
+    case FALSE:       LoadT(NUMBER, false)
+                      goto Next
+
+    case DYNVECDEC:
+    case LLP:
+    case LLG:
+    case LLL:
+                      { let DISP:=Op eq LLL => ReadL(), ReadNM()
+                        let XR:=NextP10reg()
+                        and t:=
+                          ((Op eq LLP)\(Op=DYNVECDEC)) => LOCAL,
+                          Op eq LLG => GLOBAL, LABEL
+                        if Op=DYNVECDEC do ReadL()
+                        WRMAC(MOVEI,XR,t,DISP,0,0,0)
+                        LoadT(P10reg,XR)
+                        goto Next
+                       }
+
+    case SP:          Storein(LOCAL, ReadNM(), 0)
+                      goto Next
+
+    case SPRH:        Storein(LOCAL, ReadNM(), RH)
+                      goto Next
+
+    case SPLH:        Storein(LOCAL, ReadNM(), LH)
+                      goto Next
+
+    case SPQ1:        Storein(LOCAL, ReadNM(), Q1)
+                      goto Next
+
+    case SPQ2:        Storein(LOCAL, ReadNM(), Q2)
+                      goto Next
+
+    case SPQ3:        Storein(LOCAL, ReadNM(), Q3)
+                      goto Next
+
+    case SPQ4:        Storein(LOCAL, ReadNM(), Q4)
+                      goto Next
+
+    case SPRHZ:       Storein(LOCAL, ReadNM(), RHZ)
+                      goto Next
+
+    case SPLHZ:       Storein(LOCAL, ReadNM(), LHZ)
+                      goto Next
+
+    case SG:          Storein(GLOBAL, ReadNM(), 0)
+                      goto Next
+
+    case SGRH:        Storein(GLOBAL, ReadNM(), RH)
+                      goto Next
+
+    case SGLH:        Storein(GLOBAL, ReadNM(), LH)
+                      goto Next
+
+    case SGQ1:        Storein(GLOBAL, ReadNM(), Q1)
+                      goto Next
+
+    case SGQ2:        Storein(GLOBAL, ReadNM(), Q2)
+                      goto Next
+
+    case SGQ3:        Storein(GLOBAL, ReadNM(), Q3)
+                      goto Next
+
+    case SGQ4:        Storein(GLOBAL, ReadNM(), Q4)
+                      goto Next
+
+    case SGRHZ:       Storein(GLOBAL, ReadNM(), RHZ)
+                      goto Next
+
+    case SGLHZ:       Storein(GLOBAL, ReadNM(), LHZ)
+                      goto Next
+
+    case SL:          Storein(LABEL, ReadL(), 0)
+                      goto Next
+
+    case SLRH:        Storein(LABEL, ReadL(), RH)
+                      goto Next
+
+    case SLLH:        Storein(LABEL, ReadL(), LH)
+                      goto Next
+
+    case SLQ1:        Storein(LABEL, ReadL(), Q1)
+                      goto Next
+
+    case SLQ2:        Storein(LABEL, ReadL(), Q2)
+                      goto Next
+
+    case SLQ3:        Storein(LABEL, ReadL(), Q3)
+                      goto Next
+
+    case SLQ4:        Storein(LABEL, ReadL(), Q4)
+                      goto Next
+
+    case SLRHZ:       Storein(LABEL, ReadL(), RHZ)
+                      goto Next
+
+    case SLLHZ:       Storein(LABEL, ReadL(), LHZ)
+                      goto Next
+
+    case STIND:       StoreI(0)
+                      goto Next
+
+    case STINDRH:     StoreI(RH)
+                      goto Next
+
+    case STINDLH:     StoreI(LH)
+                      goto Next
+
+    case STINDQ1:     StoreI(Q1)
+                      goto Next
+
+    case STINDQ2:     StoreI(Q2)
+                      goto Next
+
+    case STINDQ3:     StoreI(Q3)
+                      goto Next
+
+    case STINDQ4:     StoreI(Q4)
+                      goto Next
+
+    case STINDRHZ:    StoreI(RHZ)
+                      goto Next
+
+    case STINDLHZ:    StoreI(LHZ)
+                      goto Next
+
+    case FMULT:
+    case MULT:
+                      { let A1, A2 := Arg1, Arg2
+                        and r:=nil
+                        if H1|Arg1 eq P10reg \
+                           Addrble(Arg2) & H1|Arg2 ne P10reg
+                        do A1, A2 := Arg2, Arg1
+                        Makeaddrble(A1)
+                        r:=MovetoReg(A2, -1)
+                                // to any register
+                        CompMAC((Op=FMULT)=>FMPR,IMUL,r,Addr(A1,V1))
+                        Lose1(P10reg,0,r,0)
+                        goto Next
+                       }
+
+    case FDIV:
+    case DIV:
+    case REM:
+                      { let r:=nil
+                        Makeaddrble(Arg1)
+                        r:=PairP10reg()
+                                // first of a pair of free registers
+                        MovetoReg(Arg2,r)
+                        CompMAC((Op=FDIV)=>FDVR,IDIV,r,Addr(Arg1,V1))
+                        Lose1(P10reg,0,Op eq REM => r+1, r , 0)
+                        goto Next
+                       }
+
+    case FPLUS:
+    case PLUS:        CGplus()
+                      goto Next
+
+    case FMINUS:
+    case MINUS:       CGsubt()
+                      goto Next
+
+    case EQUIV:
+    case NEQUIV:      Makeaddrble(Arg1)
+                      { let r1,r2 := nil,nil
+                        r1:=MovetoReg(Arg2,-1)
+                        r2:=NextP10reg()
+
+// set up the truth val if both args the same
+
+                        WRMAC(Op eq EQUIV => SETO,SETZ, r2, 0,0, 0,0,
+                              0)
+                        CompMAC(CAME, r1, Addr(Arg1, V1))
+                        WRMAC(SETCMM,0,P10reg,r2, 0,0,0)
+                                // Not same, use other result
+                        Lose1(P10reg, 0, r2, 0)
+                                // result in r2
+                       }
+                      goto Next
+
+    case LSCALE:
+    case RSCALE:      CGscale(Op)
+                      goto Next
+
+    case COMCOM:
+                      { Makeaddrble(Arg2)
+                        let r:=MovetoReg(Arg1,-1)
+                        CompMAC(HRL,r,Addr(Arg2,V1))
+                        Lose1(P10reg,0,r,0)
+                        goto Next
+                       }
+
+// case SWAP:
+// { let v_vec 5
+// v|1,v|2,v|3,v|4,v|5_H1|Arg1,H2|Arg1,H3|Arg1,H4|Arg1,H5|Arg1
+// H1|Arg1,H2|Arg1,H3|Arg1,H4|Arg1,H5|Arg1_H1|Arg2,H2|Arg2,H3|Arg2,H4|Arg2,H5|Arg2
+// H1|Arg2,H2|Arg2,H3|Arg2,H4|Arg2,H5|Arg2_v|1,v|2,v|3,v|4,v|5
+// goto Next
+// }
+
+    case FLS:                   // One of the GREAT features of the
+                                //-- PDP-10
+                      Op := LS
+                      goto rels
+
+    case FGR:         Op := GR
+                      goto rels
+
+    case FEQ:         Op:=EQ
+                      goto rels
+
+    case EQ:
+    case NE:
+    case LS:
+    case GR:
+    case LE:
+    case GE:
+    rels:
+                      {rel
+                        let Relop := Op
+                        test Iszero(Arg2)
+                        then
+                        { switchon Relop into
+                          { case LS:
+                              Relop := GR
+                              endcase
+
+                            case GR:
+                              Relop := LS
+                              endcase
+
+                            case LE:
+                              Relop := GE
+                              endcase
+
+                            case GE:
+                              Relop := LE
+                           }
+                          Lose1(H1|Arg1, H2|Arg1, H3|Arg1, H4|Arg1)
+                         }
+                        or test Iszero(Arg1)
+                           then Stack(SSP-1)
+                           or
+                           { CGrelVal(Relop)
+                                // Leaves true or false on stack
+                             Relop := TRUE
+                            }
+
+                        Op := Readop()
+                        if Op eq JT logor Op eq JF do
+                        { if Relop eq TRUE do Relop:=NE
+                          CGrel(Relop, Op eq JT, ReadL())
+                          goto Next
+                         }
+
+// New Op isn^t JT or JF.  Get truth value into stack
+                        if Relop eq TRUE goto L
+                                // there already
+                        Makeaddrble(Arg1)
+                                // get ready to test it
+                        { let OPC,r := nil,NextP10reg()
+                          WRMAC(SETO,r, 0,0, 0,0,0)
+                                // true until tesst
+                          switchon Relop into
+                          { case EQ:
+                              OPC:=SKIPE
+                              endcase
+
+                            case NE:
+                              OPC:=SKIPN
+                              endcase
+
+                            case LS:
+                              OPC:=SKIPL
+                              endcase
+
+                            case GR:
+                              OPC:=SKIPG
+                              endcase
+
+                            case LE:
+                              OPC:=SKIPLE
+                              endcase
+
+                            case GE:
+                              OPC:=SKIPGE
+                           }
+                          CompMAC(OPC,0,Addr(Arg1,V1))
+                          WRMAC(SETZ,r, 0,0, 0,0,0)
+                                // false
+                          H1|Arg1,H3|Arg1 := P10reg, r
+                          H2|Arg1,H4|Arg1 := 0 , 0
+                         }
+                        goto L
+                       }rel
+
+    case RHZ:
+    case LHZ:
+    case Q1Z:
+    case Q2Z:
+    case Q3Z:
+    case Q4Z:
+    case RH:
+    case LH:
+    case Q1:
+    case Q2:
+    case Q3:
+    case Q4:          unless H2|Arg1 eq 0 do MovetoReg(Arg1,-1)
+                      H2|Arg1 := Op
+                      goto Next
+
+    case LSHIFT:
+    case RSHIFT:      CGshift(Op)
+                      goto Next
+
+    case LOGAND:
+    case LOGOR:
+    case EQV:
+    case NEQV:        CGlogop(Op)
+                      goto Next
+
+    case FNEG:        Op:=NEG
+    case NEG:
+    case NOT:         MakeNUMSimple(Arg1)
+                      if H1|Arg1 eq NUMBER & H2|Arg1 eq 0 do
+                      { H3|Arg1 := Op eq NEG => - H3|Arg1 , not H3|Arg1
+                        goto Next
+                       }
+                      Makeaddrble(Arg1)
+                      MovetoReg(Arg1,-1)
+                      CompMAC(Op eq NEG => MOVNS,SETCMM, 0,
+                              Addr(Arg1,V1))
+                      goto Next
+
+    case RV:          CGrv()
+                      goto Next
+
+    case JUMP:        Store(0, SSP)
+                      WRMAC(JRST,0, LABEL,ReadL(), 0,0,0)
+                      Outconsts()
+                      goto Next
+
+    case JT:
+    case JF:          Store(0, SSP-2)
+                      MovetoReg(Arg1,-1)
+                      WRMAC(Op eq JT=>JUMPN,JUMPE, H3|Arg1, LABEL,
+                            ReadL(), 0,0,0)
+                      Stack(SSP-1)
+                      goto Next
+
+    case GOTO:        Store(0, SSP-2)
+                      MovetoReg(Arg1,-1)
+                      WRMAC(JRST,0, 0,0, 0,H3|Arg1,0)
+                      Initstack(SSP-1)
+                      Outconsts()
+                      goto Next
+
+    case LAB:         Store(0, SSP)
+                      Initstack(SSP)
+                      WRLAB(ReadL())
+                      goto Next
+
+    case STACK:       Stack(ReadNM())
+                      goto Next
+
+    case STORE:       Store(0, SSP)
+                      Initstack(SSP)
+                      goto Next
+
+    case ENTRY:
+                      { let n := ReadNM()
+                        WRLAB(ReadL())
+                        WRLST("*t;Entry: ")
+                        for i:=1 to n do WRCH(PBIN())
+                        WRCH($*n)
+                        goto Next
+                       }
+
+    case SAVE:
+                      { let n := ReadNM()
+Push(MaxStack,ReadL())
+                        WRMAC(MOVEM,JSPAC,LOCAL,0, 0,0,0)
+WRMAC(MOVEI,MAXAC,LOCAL,Elt(MaxStack),0,0,0)
+WRMAC(CAMLE,MAXAC,GLOBAL,#272,0,0,0)
+WRMAC(JSP,JSPAC,GLOBAL,#273,0,0,0)
+                        Initstack(n)
+                        goto Next
+                       }
+
+// case LVRTAP:
+
+    case FNAP:
+    case RTAP:        CGapply(Op, ReadNM(),Elt(MaxStack))
+                      goto Next
+
+case ENDEF: Pop(MaxStack)
+goto Next
+
+    case RNAME:       flgstk|0:=flgstk|0+1
+                      flgstk|(flgstk|0):=false
+                      goto Next
+
+    case RRTAP:
+    case RFNAP:
+                      { let r:=ReadNM()
+                        let na:=ReadL()
+
+// switchon r into
+// { default: Report(-1) // bad resproc. cmplr bug
+// goto Next
+// //macro stuff: instr(ac,offset,index,indirect)
+// // chek that line can be put out in 1 instr and
+// // that flgstk|(flgstk|0) is false. not=> error
+// // put out the line ; endcase
+// }
+
+                        flgstk|0:=flgstk|0-1
+                        goto Next
+                       }
+
+    case FNRN:        MovetoReg(Arg1, RsltAC)
+                      SSP := SSP - 1
+
+    case RTRN:        WRMAC(JRST,0, LOCAL,0, 1,0,0)
+                                // Restore flags, while we^re at it
+                      Initstack(SSP)
+                      Outconsts()
+                      goto Next
+
+    case RES:         Store(0, SSP-2)
+                      MovetoReg(Arg1, RsltAC)
+                      WRMAC(JRST,0, LABEL, ReadL(), 0,0,0)
+                      Stack(SSP-1)
+                      Outconsts()
+                      goto Next
+
+    case RSTACK:      Stack(ReadNM())
+                      LoadT(P10reg,RsltAC)
+                      goto Next
+
+    case FINISH:      WRMAC(OpJSYS, 0, NUMBER, #170, 0,0,0)
+                                // HALTF ... pause
+                      goto Next
+
+    case SWITCHON:    CGswitch()
+                      goto Next
+
+    case DATALAB:     WRLAB(ReadL())
+                      goto Next
+
+    case ITEML:       WRMAC(JRST,0, LABEL,ReadL(), 0,0,0)
+                      goto Next
+
+    case ITEMN:       WRDATA(ReadNM(), 0, 0)
+                      goto Next
+
+    case ITEMNL:      WRDATA(0, ReadL(), 0)
+                      goto Next
+
+    case VEC:         WRBLK(ReadNM())
+                      goto Next
+
+    case ASCIZCONST:
+    case STRINGCONST:
+                      { let n := ReadNM()
+                        storestring(n, ReadL(),Op=STRINGCONST)
+                        goto Next
+                       }
+
+   }                            // end of switchon block
+ }scan
+

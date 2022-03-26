@@ -1,0 +1,38 @@
+
+// Declarations for the BCPL Compiler -- LEX and CAE.
+
+global
+{                               // CAE0 statics
+  ERRORNAME:     #400
+  TRUENODE:      #401
+  FALSENODE:     #402
+  NILNODE:       #403
+
+// CAE1 routines
+
+  Readblockbody: #404
+  Rblock:        #405
+  Rnamelist:     #406
+  EqVec:         #410
+
+// CAE2 routines
+
+  Rexp:          #411
+
+// CAE3 routines
+
+  Rdef:          #412
+  Rcom:          #413
+  Rselect:       #414
+
+// CAE4 routines
+
+  Rstruct:       #415
+  Rqualname:     #416
+ }
+
+get "<xbcpl>headbcpl"           // Declarations for BCPL.
+get "<xbcpl>headlex"            // Communication in LEX and CAE.
+get "<xbcpl>headcaecon"         // Manifests for lexemes and tree
+                                //-- nodes.
+

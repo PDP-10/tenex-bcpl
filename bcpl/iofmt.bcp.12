@@ -1,0 +1,576 @@
+get "<bcpl>head"
+get "<bcpl>utilhead"
+
+manifest
+{ eos _    1.0
+  nonumb _ 2.0
+ }
+
+// static values to allow free access to arguments
+
+static
+{ NIOArgs:      nil
+  NextIOValue:  nil
+  ZeroIOArg:    nil
+  PrintStream:  0
+ }
+structure
+{ string
+  { n byte; c^511 char
+   }
+ }
+
+// io package for Fortran like write statements
+// Richard M. Schwartz 12/21/73
+// The form of the call is:
+// WriteF(stream,formatstring,arg1,arg2,arg3,...)
+// where stream is like in the other BCPL io rountines, and
+// formatstring is a BCPL string with the FORMAT statement.
+// Fields included at present are: F,E,O,I,A,S,X,T,$,/, and literals,
+// where S is for BCPL strings.
+// The w and w.d specifications are allowed where applicable.
+// A positive integer preceding a field specifaction is the same
+// as n occurences of that field.
+// Parentheses are not allowed at present, though the structure
+// is general to allow their inclusion.
+// The Vi field can optionally precede any field which referes to
+// the output of single words.  This means that the value passed will
+// be interpreted as a pointer in a vector from which to get the value
+// A total of i successive values will be output.  The i is
+// optional.
+// Unlike FORTRAN, the iteration number, n, may apply to literals.
+// For the A or S field, if w is not specified, the entire
+// string is output.  If w is specified, and its absolute value is less
+// than the length of the string then abs(w) characters will be
+// output.  If w>0 but greater than the length, than w characters will
+//-- be
+// output right-justified.  if w<0 and -w is greater than the length,
+//-- they
+// be left-justified.
+
+let PWriteF(format,nil repname 40) be
+OutputF(OUTPUT,format,lv format,NumbArgs()-1)
+
+and TypeF(format,nil repname 40) be
+OutputF(#101,format,lv format,NumbArgs()-1)
+
+and PrintF(format,nil repname 40) be
+{ if PrintStream=0 then PrintStream _ CreateOutput("LPT:")
+  OutputF(PrintStream,format,lv format,NumbArgs()-1)
+ }
+
+and EndPrint() be
+{ EndWrite(PrintStream)
+  PrintStream _ 0
+ }
+
+and WriteF(stream,format,nil repname 40) be
+OutputF(stream,format,lv format,NumbArgs()-2)
+
+and OutputF(stream,format,argvec,nargs) be
+{
+  NIOArgs _ nargs
+  ZeroIOArg _ argvec
+  NextIOValue _ 1
+  let fvector _ vec 500
+  Unpackstring(format,fvector)
+  let pointer _ 1
+  Format(stream,fvector,lv pointer,0)
+ }
+
+and Format(stream,fvector,lvpoint,termination) _ valof
+{ let i _ rv lvpoint            // initialize string pointer
+// string for use when must write to a string
+  let tempvector _ vec 500
+  let tempstring _ vec 200
+  let width _ nil
+  let deciplaces _ nil
+  let ac3r _ nil
+  let ac3 _ nil
+  let field2 _ nil
+  let val _ nil
+  let vtemp _ nil
+  let value _ nil
+startover:
+  rv lvpoint _ i
+  let term _ 0
+  let length _ fvector|0
+  let vectorcount _ -1
+  let ac3l _ #220100
+  let field1 _ 0
+  let field3 _ 0
+  let command _ 0
+  let numeric _ false
+  let floating _ false
+  let radix _ 10
+  let count _ 1                 // initialize iteration count
+
+  let n _ NumberS(fvector,lvpoint)
+                                // check for iteration count
+  switchon n into
+  { case eos:  resultis -1      // reached EOS - done
+
+    case nonumb:
+               endcase          // code for no number, but not EOS
+
+    default:   if n<1 then
+               { WriteS("*nIteration count must be >0 (default=1)")
+                 i _ rv lvpoint
+                 goto error
+                }
+               count _ n
+               term _ 1
+   }
+  if fvector|(rv lvpoint) = $( then
+                                    // check for $(
+  { rv lvpoint _ rv lvpoint + 1
+// save the point of the last $(.
+    term _ - rv lvpoint
+   }
+
+// achieve iteration through recursion
+
+autorepeat:
+  if term ne 0 then
+  { let itpointer _ rv lvpoint
+    for j _ 1 to count do
+    { rv lvpoint _ itpointer
+      if Format(stream,fvector,lvpoint,term) <0 then resultis -1
+     }
+    i _ rv lvpoint
+    goto termverify
+   }
+
+// check if finished with string
+
+  if rv lvpoint>length then resultis -1
+
+// no iteration count look for a field
+
+  i _ rv lvpoint
+  while i le length             // i will be the pointer
+  do
+  {a
+    switchon (fvector|i)&#137 into
+                                // allow lower case fields
+    {b
+      case 0:  WriteS("*nThis shouldn't happen")
+               endcase          // ignore all spaces
+
+      case $X: if vectorcount ne -1 then
+		{ WriteS("*nVector field doesn't apply to literals"); goto error
+		 }
+		BOUT(stream,$*s)
+               i _ i + 1
+               goto termverify
+
+      case $V: i _ i + 1
+               n _ NumberS(fvector,lv i)
+               switchon n into
+               { case eos:
+                 case nonumb: test ((fvector|i)&#137) = $V
+                              ifso { vectorcount _ -i; i _ i + 1 }
+                              ifnot vectorcount _ 0
+                              endcase
+
+                 default:     if n<1
+                              then
+                              { WriteS("*nIndicated Vectorcount must be positive")
+                                goto error
+                               }
+                              vectorcount _ n - 1
+                }
+               loop
+
+// literals
+
+      case $*'&#137:
+               if vectorcount ne -1 then
+               { WriteS("*nVector field doesn't apply to literals")
+                 goto error
+                }
+               for j _ i+1 to length do
+               { if fvector|j = $'
+                 then test (j<length)&(fvector|(j+1) = $')
+                      ifso j _ j + 1
+                      ifnot
+                      { i _ j + 1
+                        goto termverify
+                       }
+                 BOUT(stream,fvector|j)
+                }
+               WriteS("*nLiteral not complete")
+               goto error
+
+// single character
+
+      case $$&#137:
+		 if vectorcount ne -1 then
+		{ WriteS("*nVector field doesn't apply to literals"); goto error
+		 }
+               BOUT(stream,fvector|(i+1))
+               i _ i + 2
+               goto termverify
+
+// EOL
+
+      case $/&#137:
+		 if vectorcount ne -1 then
+		{ WriteS("*nVector field doesn't apply to literals"); goto error
+		 }
+		WriteS(stream,"*c*l")
+               i _ i + 1
+               goto termverify
+
+// column set
+
+      case $T: if vectorcount ne -1 then
+		{ WriteS("*nVector field doesn't apply to literals"); goto error
+		 }
+		i _ i + 1
+               width _ NumberS(fvector,lv i)
+               switchon width into
+               { case 0:
+                 case eos:
+                 case nonumb: width _ -1
+
+                 default:     if width<1
+                              then
+                              { WriteS("*nNumber of columns must be >0")
+                                goto error
+                               }
+                }
+               { let temp,temps,acv _ nil,vec 5,vec #20
+		 acv|2 _ 0
+		 if (stream=#100) \ (stream=#101) then
+		{ acv|1 _ #400000; acv|2 _ 0
+		 JSYS(#206,acv)	// GPJFN-to check if stream is the
+				// primary output file
+		}
+		 test (acv|2=-1)\valof
+		{ temps|0 _ #3000,,0
+		 acv|1 _ POINT(9,temps,8)
+		 acv|2 _ stream; acv|3 _ #100000,,0
+		 JSYS(#30,acv)	// JFNS - to determine if TTY:
+		 resultis Eqstr(temps,"TTY")
+		}
+		  ifso { acv|1 _ stream; acv|2 _ 0
+			 JSYS(#111,acv)		// RFPOS - file position
+			 temp _ width - rh acv|2 - 1
+			}
+		// for now, all except TTY gets a $*c and spaces
+		  ifnot temp _ -1
+                 if temp < 0 then
+                 { BOUT(stream,$*c)
+                   temp _ width - 1
+                  }
+                 for j _ 1 to temp do BOUT(stream,$*s)
+                }
+               goto termverify
+
+// value output
+
+      case $F:
+      case $E: floating _ true
+
+      case $I:
+      case $O: numeric _ true
+
+      case $A:
+      case $S:
+// get the value - if no more - done
+		if NextIOValue > NIOArgs then resultis -1
+               value _ ZeroIOArg|NextIOValue
+               NextIOValue _ NextIOValue + 1
+
+// check for width here
+
+               command _ (fvector|i)&#137
+               i _ i + 1
+               width _ NumberS(fvector,lv i)
+               switchon width into
+               {e
+                 case 0: WriteS("*nZero width not allowed")
+                         goto error
+
+                 case eos:
+                 case nonumb:
+                         width _ 0
+                                // flag to mean no width field
+                         endcase
+
+                 default:
+                         if numeric then
+                         {f
+                           if width<0
+                           then
+                           { WriteS("*nNegative width not allowed for numeric fields")
+                             goto error
+                            }
+
+// get decimal part
+
+                           if floating then
+                           {g
+                             test fvector|i = $.
+                             ifso
+                             {h
+                               i _ i + 1
+                               deciplaces _ NumberS(fvector,lv i)
+                               if deciplaces ge eos then
+                               { WriteS("*nDecimal field missing")
+                                 goto error
+                                }
+                               if deciplaces> width-1 then
+                               { WriteS("*nDecimal part too big")
+                                 goto error
+                                }
+                              }h
+                             ifnot deciplaces _ -1
+                            }g
+                          }f
+                }e
+               break
+
+      default: WriteS("*nIllegal field")
+               goto error
+     }b
+    i _ i + 1
+   }a
+
+// check whether the end of the format string has been reached with no
+// command.  Later, this may cause the format to repeat at the last
+// left paren ala FORTRAN
+
+  if command=0 then resultis -1
+
+// at this point, the format command has been parsed as far as needed,
+// and the value(s) can be output.
+// the value can respresent a pointer to a block of values to be
+  //-- output.
+
+  vtemp _ value
+
+// if variable, get vectorcount from the next argument
+
+  if vectorcount<
+     -1
+  then
+  { if NextIOValue > NIOArgs
+    then
+    { WriteS("*nVariable vectorcount must be in the aargument list after the value")
+      i _ -vectorcount
+      goto error
+     }
+    vectorcount _ ZeroIOArg|NextIOValue - 1
+    NextIOValue _ NextIOValue + 1
+   }
+  if vectorcount = -1 then
+  { vtemp _ lv value
+    vectorcount _ 0
+   }
+
+  for j _ 0 to vectorcount do
+  {k
+    val _ vtemp|j
+    test width=0
+    ifso                        // free format
+    {l
+      switchon command into
+      {m
+        case $I:   WriteN(stream,val)
+                   endcase
+
+        case $O:   WriteOct(stream,val)
+                   endcase
+
+        case $F:   WriteR(stream,val)
+                   endcase
+
+// equivalent to E14.7 FORMAT
+
+        case $E:   ac3 _ #225300,,#20704
+                   WriteR(stream,val,ac3)
+                   endcase
+
+        case $A:   ASCIZToString(val,tempstring)
+                   val _ tempstring
+        case $S:   WriteS(stream,val)
+                   loop
+       }m
+     }l
+
+    ifnot                       // width specified
+    {n
+      switchon command into
+      {o
+        case $O:   radix _ 8
+        case $I:
+                   { let t _ OUTPUT
+                     OUTPUT _ stream
+                     WriteRadix(val,radix,width,true)
+                     OUTPUT _ t
+                    }
+                   endcase
+
+        case $E:   field3 _ 4
+                   ac3l _ #225300
+
+// will change field1 when find out how to eliminate "."
+
+        case $F:   field1 _
+                     -field3 + (deciplaces>-1 => width-deciplaces-1,
+                                width-1)
+                   field2 _ deciplaces>0 => deciplaces,0
+                   ac3r _ (field1 lshift 12)+(field2 lshift 6)+field3
+                   ac3 _ ac3l,,ac3r
+                   WriteR(stream,val,ac3)
+                   endcase
+
+        case $A:   ASCIZToString(val,tempstring)
+                   val _ tempstring
+        case $S:   Unpackstring(val,tempvector)
+                   if width>0
+                   then for k _ 1 to width-tempvector|0
+                        do BOUT(stream,$*s)
+                   for k _
+                         1 to min(width<0 => -width,width,
+                                  tempvector|0)
+                  do BOUT(stream,tempvector|k)
+                   if width<0
+                   then for k _ tempvector|0 to -width-1
+                        do BOUT(stream,$*s)
+                   loop
+       }o
+     }n
+   }k
+
+// check the field terminator against the iteration termination
+  //-- condition coded into termination.
+
+termverify:
+
+// if termination is 1 (no paren) don't look for a terminator
+
+// just a simple iteration - e.g. 3F7.4
+  if termination = 1 then
+  { rv lvpoint _ i
+    resultis 0
+   }
+// either nothing or had a (
+  for j _ i to length do
+  { switchon fvector|j into
+    { case $*s: loop	// ignore
+
+      case $,:  i _ j + 1	// terminated
+                goto startover
+
+      case $):  if termination = 0 then
+                { i _ j
+                  WriteS("*nUnexpected )")
+                  goto error
+                 }
+                rv lvpoint _ j + 1	// end of a ()
+                resultis 0
+
+// A terminator may not be necessary.  Try to parse the character
+// found as the next format field.
+      default:  i _ j
+                goto startover
+     }
+   }
+// if finished but there are more arguments, then continue at the
+// matching left paren if the last character was a right paren, or
+// at the beginning.
+  if termination = 0 then
+  { if NextIOValue > NIOArgs then resultis -1
+// check for having finished, but not used any arguments
+    if NIOArgs>0 & NextIOValue=1 then
+    { WriteS("*nWarning: Values passed to format with no value fields*n")
+      resultis -1
+     }
+    if term<0 then
+    { rv lvpoint _ -term
+      goto autorepeat
+     }
+// if there is no final parenthesis start format over
+    i _ 1
+    goto startover
+   }
+  WriteS("*nUnmatched left parenthesis")
+  i _ -termination - 1
+  goto error
+
+// place to print out error messages
+
+error:
+  WriteS("*nFormat Error:*n")
+  for j _ 1 to i do PBOUT(fvector|j)
+  WriteS("=>error<=")
+  for j _ i+1 to length do PBOUT(fvector|j)
+  PBOUT($*n)
+  Help("")
+  resultis -1
+ }
+
+// reads an integer number from a vector, ignoring all spaces and
+// allowing a - sign.  If it can't find a number before it gets a non-
+// numeral, the it sends back an answer of floating 2.0 as an error.
+// If it finds no number before the end of the string it returns
+//-- eos-1.0
+// Because of these error codes, the routine can't be used for integers
+// which could get as high as the machine representation of 1.0
+
+and NumberS(vector,lvi) _ valof
+{ let sign _ 1
+  let numb _ nonumb
+  let err _ eos
+
+  for j _ rv lvi to vector|0 do
+  { rv lvi _ j
+    switchon vector|j into
+    { case $*s: loop
+
+      case $-:  if (sign=-1)\(numb ne nonumb) then resultis nonumb
+                sign _ -1
+                loop
+
+      default:  test 47<vector|j<58
+                ifso
+                { if numb=nonumb then numb_0
+                  numb _ numb*10 + vector|j-48
+                 }
+                ifnot
+                { err _ nonumb
+                  break
+                 }
+     }
+   }
+  if err=eos then rv lvi _ rv lvi + 1
+  if numb=nonumb then resultis err
+  resultis numb*sign
+ }
+
+// Routine which addes a character to a string each
+// time it is called.  In order to have output create a string,
+// just say stream _ CreateString(stringtobefilled) instead
+// of stream _ CreateOutput(..).  Any subsequent output to that
+// stream will go to the string given.  It can only be used for
+// one string at a time.
+// To initialize it, and tell it what the string
+// is call it with just a string.
+// There is no bytesize argument as in CreateOutput
+and CreateString(Str,Chr) _ valof
+{ static
+  { N: 0
+    STR: 0
+   }
+  if NumbArgs()=1 then
+  { N _ 0; STR _ Str; STR>>string.n _ 0;
+    resultis CreateOutput(-CreateString)
+   }
+
+  N _ N+1
+  STR>>string.n _ N
+  STR>>string.c^N _ Chr
+ }

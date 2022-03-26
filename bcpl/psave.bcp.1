@@ -1,0 +1,320 @@
+//<JMILLER>NEWLISTF.BCP;3    14-JUN-73 12:24:23	EDIT BY JMILLER
+//Fixed defaulting to ".S"
+//<JMILLER>NEWLISTF.BCP;2    23-MAY-73 11:07:50	EDIT BY JMILLER
+//	Fixed up EXTERNALS & GLOBALS section to
+//	print only ones defined in the file
+manifest
+ {
+   Bitsperword _ 36
+   JFCL _ #255000
+   JRST _ #254000
+ }
+get "<bcpl>head"
+get "<bcpl>utilhead"
+get "<xbcpl>headsymb"
+get "<bcpl>jshead"
+static
+ { Fork_nil
+   PageInCore_-1
+   ConsoleOut_nil
+   ConsoleIn_nil
+   SymbolTable _ nil
+   STP _ nil
+ }
+
+let Start() be
+ { ConsoleIn_FindInput(0)       //tty input
+   ConsoleOut_CreateOutput(0)   //tty output
+   SymbolTable _ 0              //re-read the loader symbol table
+   let Symtab_#400000           //symbol table start
+   WriteS(ConsoleOut,"*nOutput to: ")
+   let Outfile_CreateOutput(2)  //read output file name
+   let SFile_0                  //no symbol table file
+   let SSAVE_nil                //no ssave file
+    { INPUT_ConsoleIn
+      OUTPUT_ConsoleOut         //main i/o on tty
+      WriteS("*nSSAVE file: ")
+      let Block _ table #120000,,0 , #100,,#101 , 0,0,0,'SAV',0,0,0
+      let AC _ vec 15
+      AC|1, AC|2 _ Block,0
+      unless JSYS(#20,AC)=2 do loop
+      SSAVE _ rhz AC|1
+    } repeatuntil Setup(SSAVE)  //read page table, make sure its an SSAVE file
+    { OUTPUT_Outfile
+      let BlockB_FindBlockB(SSAVE,lv SFile)  //find the start of block B
+      if BlockB=0 do break
+      Symtab|0_BIN(SFile)       //read first header word
+      for i _ 1 to (Symtab>>SThead.Length)-1 do
+       { Symtab|i _ BIN(SFile)  }
+      let Pointer_Symtab>>SThead.SDB+Symtab  //pointer to symbol descriptors
+      let StartPtr _ Pointer
+      let TBEND_Pointer + (Symtab>>SThead.SDN) -1  //Pointer to end of descriptors
+      WriteS("STATICS:*n")
+      let NumStat _ 0
+      until Pointer > TBEND do
+      
+       { if Pointer>>STsd.Type=STstatic do  //is it a static symbol?
+          { let TYPE _ Pointer>>STsd.SType
+            NumStat _ NumStat+1
+            let OffsetInBlockB _ Pointer>>STsd.ILCB
+            WriteOct(TYPE=STstaticYYYYvar => (rh OffsetInBlockB)+BlockB,rh Readword(BlockB+OffsetInBlockB,SSAVE) )
+            PBOUT($*t)
+            WriteS(Pointer>>STsd.Name+Symtab>>SThead.NameB+Symtab)
+            PBOUT($*t)
+            switchon TYPE into
+             {
+             default:
+               WriteS("(unknown type)")
+               endcase
+             case STstaticYYYYvar:
+               WriteS("(variable)")
+               endcase
+             case STstaticYYYYfunction:
+             case STstaticYYYYroutine:
+                { WriteS(TYPE=STstaticYYYYfunction=>"(function)*t","(routine)*t")
+                  let NumArgs _ Pointer>>STsd.Args
+                  test NumArgs = 0
+                  ifso
+                   { WriteS("no args")  }
+                  ifnot
+                   { WriteOct(NumArgs)
+                     WriteS(" arg")
+                     if NumArgs>1 do 
+                      { PBOUT($s) }
+                   }
+                  endcase
+                }
+             case STstaticYYYYlabel:
+               WriteS("(label)")
+               endcase
+             }
+            if 4 > TYPE > 0 do
+             { if lh Readword(BlockB+OffsetInBlockB) ne JRST do
+                { WriteS("*tBAD FORMAT: NOT A JRST!!")  }
+             }
+            PBOUT($*n)
+          }
+         Pointer _ Pointer + (Pointer>>STsd.Type<8=>2,1)  //increment pointer
+       }
+      if NumStat=0 do WriteS("none*n")
+      WriteS("*nEXTERNALS & GLOBALS:*n")
+      let NumGlob _ 0
+       { let Entry _ Readword(SymbolTable,SSAVE)
+         let Exit _ 0
+         until ((q4z Entry)&#740)=#40 do
+          { if SymbolTable<STP do 
+             { Exit _ 1 
+               break 
+             }
+            if Entry ne 0 & ((q4z Entry)&#740)=0 do 
+             { Exit_1 
+               break 
+             }
+            SymbolTable _ SymbolTable-2
+            Entry _ Readword(SymbolTable,SSAVE)
+          }
+         if Exit = 1 do break
+         NumGlob _ NumGlob+1
+         WriteOct(rhz Readword(SymbolTable+1,SSAVE))
+         PBOUT($*t)
+         let v1,v2 _ vec 6, vec 2
+         SymbolTable _ SymbolTable-2
+         SquozeToVec(Entry,v1)
+         Packstring(v1,v2)
+         WriteS(v2)
+         let GLnum _ 0
+         for i _ 3 to v1|0 do
+          { unless $0 le v1|i le $9 do 
+             { GLnum_-1 
+               break 
+             }
+            GLnum _ GLnum*8+v1|i-$0
+          }
+         test (v1|1=$G)&(v1|2=$L)&(GLnum ge 0)
+         ifnot
+          { PBOUT($*n)  }
+         ifso
+          { Pointer _ StartPtr
+            until Pointer > TBEND do
+             { let TYPE _ Pointer >> STsd.Type
+               if (TYPE=STglobal\TYPE=STglobalYYYYbig)&
+               GLnum=(TYPE=STglobal=>Pointer>>STsd.Data,
+                                    Pointer|1)
+               do
+                { PBOUT($*t)
+                  WriteS(Pointer>>STsd.Name+Symtab>>SThead.NameB+Symtab)
+                  PBOUT($*n)
+                  break
+                }
+               Pointer_Pointer+(Pointer>>STsd.Type<8=>2,1)
+             }
+          }
+       } repeat
+    } repeat
+   EndRead(SSAVE)
+   EndWrite(Outfile)
+   finish
+ }
+
+
+and Setup(File) _ valof
+{ let AC _ list 0, 0, 0
+if JSYS(jsCFORK, AC)=1 do resultis false
+Fork _ AC!1
+AC!1 _ Fork,,File
+JSYS(jsGET,AC)
+resultis true
+}
+
+and Readword(Addr,File) _ valof
+ { let Page _ Addr/#1000
+   let Word _ Addr rem #1000
+   unless Page=PageInCore do
+  {   let AC_vec 15
+      AC|1 _ Fork,,Page
+      AC|2 _ #400000,,#377
+      AC|3 _ #100000,,0
+      JSYS(#56,AC)              //PMAP in the page
+      PageInCore _ Page
+    }
+   resultis #377000|Word
+ }
+
+
+and FindBlockB(File,SFile) _ valof
+ { unless rv SFile = 0 do EndRead(rv SFile)  //Close symbol file
+   if SymbolTable=0 do
+    { STP_Readword(#116,File)   //Get Loader symbol table pointer
+      SymbolTable _ (rh STP-lh STP)-2
+      STP_rh STP
+    }
+   let A _ Readword(SymbolTable,File)  //Read symbol table entry
+   until (A ne 0)&(((q4 A)&#740)=0) do  //Read to program name
+    { if SymbolTable<STP do resultis 0
+      SymbolTable _ SymbolTable-2
+      A _ Readword(SymbolTable,File)
+    }
+   let Root _ vec 9             //Rootname, vector
+   let RName,RNAME _ vec 9,vec 3  //Rootname, string for printing
+   SquozeToVec(Readword(SymbolTable,File),Root)  //Unpack  squoze name to root vector
+   let Full _ false
+   RName|0_0
+   for i _ 1 to Root|0 do
+    { if Root|i =$. do
+       { Root|(i+1) _ $S
+         Root|0 _ i+1
+         Full _ true
+         break
+       }
+      RName|0,RName|i _ (RName|0)+1,Root|i
+    }
+   let A _ Root|0
+   unless RName|0<6 do
+    { Root|(A+1), Root|(A+2) _ $^F, $S
+      Root|0 _ A+2
+      for i _ 1 to 3 do
+       { RName|((RName|0)+i) _ $.  }  ////End print-out name in "..."
+      RName|0 _ (RName|0)+3
+      Full _ true
+    }
+   unless Full do 
+    { Root|(A+1),Root|(A+2)_$.,$S
+      Root|0_A+2 
+    }
+   Packstring(RName,RNAME)
+   Root|((Root|0)+1) _ 0
+   let AC _ vec 15
+   AC|1 _ #100001,,0
+   AC|2 _ POINT(36,Root+1)      //Name string pointer
+   SymbolTable _ SymbolTable-2  //Move pointer for next call
+   WriteS("*n*n*n*n*nFile: ")
+   WriteS(RNAME)
+   WriteS(" starts at #")
+   let addr _ rh Readword(SymbolTable+3,File)  //Get address of rel file start
+   WriteOct(addr)
+   unless JSYS(#20,AC)=2 do     //GTJFN, short form
+   
+       
+    { Packstring(Root,RName)
+      test Eqstr(RName,"UTIL.S")\Eqstr(RName,"IOLIBE^fS")
+      ifso
+       { let BCPL _ 'BCPL'      //ASCIZ for "BCPL"
+         let Block _ vec 8
+         Block|0,Block|1,Block|2 _ #100000,,0 , #377777,,#377777,0
+         Block|4,Block|5,Block|6,Block|7,Block|8 _ 0,0,0,0,0
+         Block|3 _ POINT(7,BCPL)  //default directory
+         AC|1 _ Block
+         AC|2 _ POINT(36,Root+1)
+         unless JSYS(#20,AC)=2 do
+          { WriteS("*nSymbol Table not in <BCPL>")
+            rv SFile _ 0
+            resultis FindBlockB(File,SFile)
+          }
+       }
+      ifnot
+       { WriteS("*nNo Symbol File")
+         rv SFile _ 0
+         resultis FindBlockB(File,SFile)
+       }
+    }
+   rv SFile _ AC|1              //JFN for symbol table file
+   AC|2 _ #440000,,#200000
+   unless JSYS(#21,AC)=2 do     //Open symbol file
+    { WriteS("*nCan't open Symbol File")
+      resultis FindBlockB(File,SFile)
+    }
+   WriteS("*n*n")
+   let Word _ Readword(addr,File)
+   unless lh Word=JFCL do
+    { WriteS("*n No JFCL there")
+      resultis FindBlockB(File,SFile)
+    }
+   resultis rh Word
+ }
+
+
+and SquozeToVec(sqoz,Vec) _ valof
+ { let r _ sqoz rshift 32       //Twiddle bits
+   sqoz _ sqoz&(#037777,,#777777)
+   Vec|0 _ 0
+   for chcnt _ 6 to 1 by -1 do
+    { let Ch _ sqoz rem #50
+      test 0<Ch<#13
+      ifso
+       { Ch _ Ch-1+$0           //Squoze digit
+       }
+      ifnot
+       { test 0<Ch<#45
+         ifso
+          { Ch _ Ch-#13+$A      //Squoze letter
+          }
+         ifnot
+          { Ch _ selecton Ch into
+             {
+             default:
+               Ch
+             case #45:
+               $.
+             case #46:
+               $$
+             case #47:
+               $%
+             }
+          }
+       }
+      Vec|chcnt _ Ch
+      sqoz _ sqoz/#50
+      test Ch ne 0
+      ifso 
+       { Vec|0 _ (Vec|0)+1 }
+      ifnot 
+       { break }
+    }
+   unless Vec|0 = 6 do
+    { for i _ 1 to Vec|0 do
+       { Vec|i _ Vec|((6-Vec|0)+i)
+       }
+    }
+   resultis r
+ }
+

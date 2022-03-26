@@ -1,0 +1,88 @@
+
+	TITLE	ERRSET
+	SUBTTL	R.S.Tomlinson
+
+	EXTERN	GL272,GL273
+
+	ENTRY	GL276, GL277
+
+GL276:	JRST ERRSET
+GL277:	JRST ERROR
+
+; Stack format for ErrSet
+; 0/  Return from ErrSet
+; 1/  # args to ErrSet
+; 2/  Severity
+; 3/  Pointer to store callee result through
+; 4/ Function to call
+; 5/  First arg of Function
+; 6/  Second
+; ...
+; After call into callee, stack
+; 0/  same
+; 1/  same
+; 2/  same
+; 3/  same
+; 4/  same
+; 5/  previous contents of OLD16
+; 6/  return to ErrSet
+; 7/  # args to callee (# to Errset - 3)
+; 8/  First arg to callee
+
+; Establish a stack frame to backtrack to
+
+; Arguments and locals
+
+DEFINE	RETURN<0(16)>
+DEFINE	NAR<1(16)>
+DEFINE	LEVEL<2(16)>
+DEFINE	RESULT<3(16)>
+DEFINE	FN<4(16)>
+DEFINE	SAVOLD<5(16)>
+DEFINE	NEWNAR<7(16)>
+
+ERRSET:	MOVEM 1,RETURN		; Save return
+	MOVEI	17,10(16)	; set up the cover
+	CAMLE	17,GL272	; Test for stack overflow
+	JSP	1,@GL273	; Yes, so go handle it
+	MOVE 2,NAR		; Get number of arguments
+	SUBI 2,3		; Convert to number of args of callee
+	JUMPL 2,ERRINI		; Too few => initialize error
+	JUMPE 2,ERRS1		; No args to copy for callee
+	HRROI 3,FN		; Make a pointer that wont underflow
+	ADD 3,2			; Point it to last arg
+	MOVE 4,2		; Copy # args
+	POP 3,3(3)		; Move each arg up three spaces
+	SOJG 4,.-1
+ERRS1:	MOVEM 2,NEWNAR		; Arg count for callee
+	MOVE 2,OLD16		; Previous errset
+	MOVEM 2,SAVOLD		; Save in a local
+	MOVEM 16,OLD16		; Save this frame as errset
+	ADDI 16,6		; Set frame for callee
+	JSP 1,@-6+FN		; Call him
+	SUBI 16,6		; Reset frame for me
+	MOVEI	17,10(16)	; Restore Stack cover
+	MOVE 2,SAVOLD		; Restore previous errset
+	MOVEM 2,OLD16
+	SKIPE 3,RESULT		; Want a result?
+	 MOVEM 1,0(3)		; Yes, save it
+	SETO 1,			; Result of this is true
+	JRST @RETURN
+
+ERRINI:	SETZM OLD16		; No errset
+	JRST @1
+
+ERROR:	SKIPE 1,NAR		; How many args, if 0 1 gets it
+	 MOVE 1,2(16)		; Otherwise severity from arg
+ERRLUP:	SKIPN OLD16
+	 HALT .			; No errset
+	MOVE 16,OLD16		; Reset to frame of errset
+	MOVE 2,SAVOLD
+	MOVEM 2,OLD16
+	CAMLE 1,LEVEL		; Severity less that errset
+	 JRST ERRLUP		; NO, loop
+	JRST @0(16)		; Yes, return. result is in 1
+
+OLD16:	0
+
+	END

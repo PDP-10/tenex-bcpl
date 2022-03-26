@@ -1,0 +1,358 @@
+//<BCPL>IOLIBE.BCP;3    28-MAY-73 12:03:58	EDIT BY ROVNER
+//   SIN and SOUT functions were added
+//<BCPL>IOLIBE.BCP;2    25-MAY-73 14:02:32	EDIT BY ROVNER
+//  ASCIZToString was added
+// Library for BCPL I/O on TENEX
+// Last modified 27-Nov-72 by PDR
+
+get "<bcpl>head"
+
+static 
+ {
+ acvec:
+   vec #20
+ acvout:
+   vec #20
+ TACS:
+   vec  #20 
+ }
+
+let  FindInput(Source,bytesize) _ FInOut(Source,true,((NumbArgs() = 1) => 7,bytesize))
+
+and CreateOutput(Source,bytesize) _ FInOut(Source,false,((NumbArgs() = 1) => 7,bytesize))
+
+and FInOut(Source,Ifread, Bytesize) _ valof
+ {findinput
+   let cnstr _ vec 40
+   and nskp,OJsav _ 0,OUTPUT
+   
+// Source:
+//	-f: use fcn or rtne (f) for i/o
+//	0: primary input/output
+//	1: ask user
+//	2: ask user, but no msg.
+//	+s: s is a string
+   
+   if Source < 0 do
+    {fcnsource
+      q4 Source _ (Ifread => -1,-2)
+      q3 Source _ Bytesize
+      resultis Source
+    }fcnsource
+   
+   switchon Source into
+    {switch
+    case 0:
+      resultis Ifread => #100, #101
+      
+    case 2:
+    case 1:
+    l:
+      OUTPUT_#101
+      unless Source=2 do WriteS(Ifread => "*nInput file: ","*nOutput file: ")
+      OUTPUT_OJsav
+      
+      acvec|1 _ (Ifread => #100003, #460003) ,, 0
+      acvec|2 _ #100,,#101
+      nskp _ JSYS(#20, acvec, acvout)
+      test nskp eq 2
+      ifso goto OpenIt
+      ifnot 
+       {gjfail
+         OUTPUT_#101
+         WriteS("*nGTJFN Error - ")
+         ERSTR(acvout|1)
+         OUTPUT_OJsav
+         goto l
+         endcase 
+       }gjfail
+      
+    default:
+// assume it is a string
+      unless Source > #20 do
+       { OUTPUT_#101
+         WriteS("*nBad source param to FInOut: ")
+         WriteOct(Source)
+         PBOUT($*n)
+         OUTPUT_OJsav
+         resultis 0 
+       }
+      
+      StringToASCIZ(Source, cnstr)
+      
+      acvec|1_ (Ifread => #100001,#400001),,0
+      acvec|2_ POINT(7,cnstr,-1)
+      nskp _ JSYS(#20, acvec, acvout)
+      test nskp eq 2
+      ifso goto OpenIt
+      ifnot 
+       {gjfail2
+         OUTPUT_#101
+         WriteS("File *"")
+         WriteS(Source)
+         WriteS("*" not found.*n")
+         ERSTR(acvout|1)
+         OUTPUT_OJsav
+       }gjfail2
+      
+    }switch
+   resultis 0
+   
+ OpenIt:                        //open the newly looked-up file
+   acvec|1_acvout|1
+   acvec|2_(Bytesize lshift 12) ,, (Ifread => #200000,#100000)
+   nskp_JSYS(#21, acvec, acvout)
+   test nskp eq 2
+   ifso resultis rh (acvec|1)
+   ifnot 
+    {openfail
+      OUTPUT_#101
+      WriteS("*nFailure opening file - ")
+      if Source > #20 do 
+       { WriteS(Source) 
+         WriteS("*n")
+       }
+      ERSTR(acvout|1)
+      OUTPUT_OJsav
+      JSYS(#23, acvec)
+      if Source=1 do goto l
+      resultis 0
+    }openfail
+ }findinput
+
+
+and StringToASCIZ(s,As) _valof
+ {stringtoasciz
+   let n_ s|0 rshift 27
+   and Ps _ POINT(9,s,8)
+   and Pas _ POINT(7,As,-1)
+   
+   for i_1 to n do IDPB(ILDB(lv Ps), lv Pas)
+   IDPB(0, lv Pas)
+   resultis As
+ }stringtoasciz
+
+and ASCIZToString(As,s)_valof
+ { let pas_POINT(7,As,-1)
+   let ps_POINT(9,s,8)
+   let i_0
+   s|0_0
+    { let ch_ILDB(lv pas)
+      if ch=0 do
+       { q4 s|0_i
+         break
+       }
+      i_i+1
+      IDPB(ch,lv ps)
+    } repeat
+   for i_1 to 4 do IDPB(0,lv ps)
+   resultis s
+ }
+
+and ERSTR(stream,Errnum) be
+ {
+   if NumbArgs()=1 do
+    { Errnum_stream
+      stream_OUTPUT
+    }
+   let v_vec 30
+   let p_POINT(7,v,-1)
+   let Av _ vec #20
+   Av|1 _ p
+   Av|2, Av|3 _ #400000,,Errnum , 0
+   JSYS(#11, Av)
+    { let d_ILDB(lv p)
+      if d=0 do break
+      BOUT(stream,d)
+    } repeat
+   BOUT(stream,$*n)
+ }
+
+
+and WriteS(s,s1) be
+ { if NumbArgs()=1 do 
+    { s1_s 
+      s_OUTPUT
+    }
+   let ptr_POINT(9,s1,8)
+   and n_#777&q4(s1|0)
+   
+   for i_1 to n do Writech(s,ILDB(lv ptr))
+ }
+
+and WriteOct(n,n1) be 
+ { test NumbArgs()=1 then WriteRadix(n,8,0,false) or
+    { let t_OUTPUT
+      OUTPUT_n
+      WriteRadix(n1,8,0,false)
+      OUTPUT_t
+    }
+ }
+
+
+and WriteN(n,n1) be 
+ { test NumbArgs()=1 then WriteRadix(n,10,0,false) or
+    { let t_OUTPUT
+      OUTPUT_n
+      WriteRadix(n1,10,0,false)
+      OUTPUT_t
+    }
+ }
+
+
+
+
+and WriteRadix(n,r,s,p) be
+ {writeradix
+   if OUTPUT eq 0 return
+   
+   TACS|2 _ n
+   s  _ (s & #177 ) logor #020000
+   if p do s _ s logor #100000
+   TACS|3 _ s,,r
+   if OUTPUT > 0 do
+    {fout
+      TACS|1 _ rh OUTPUT
+      JSYS(#224,TACS)
+      return
+    }fout
+   
+// output to fcn or rtne
+   let b _ vec 10
+   and Pb _ POINT(7,b,-1)
+   
+   TACS|1 _ Pb
+   JSYS(#224,TACS)
+   
+    { let d _ ILDB(lv Pb)
+      if d eq 0 break
+      BOUT(OUTPUT,d)
+    } repeat
+   
+ }writeradix
+
+
+and Unpackstring(s,v) be BCOPY(s,9,v,36, #777 & q4 (s|0) )
+and Packstring(v,s) := valof
+ {pack
+   s|((v|0)/4) _ 0
+   BCOPY(v,36, s,9, v|0)
+   resultis s
+ }pack
+
+and BCOPY(S1,Z1, S2,Z2, n) be
+ {bcopy
+   let P1,P2 _ POINT(Z1,S1) , POINT(Z2,S2)
+   for i_0 to n do IDPB(ILDB(lv P1), lv P2)
+ }bcopy
+
+and EndRead(j,lhpart) be
+ {endread
+   let k_nil
+   unless j>0 return
+   TACS|1_rh j
+   JSYS(#24,TACS)               // GTSTS
+   k_lh TACS|2
+   TACS|1_rh j
+   if NumbArgs()=2 do lh TACS|1_lhpart
+   if (k & #200) eq 0 return    //invalid jfn
+   if (k & #500000) eq #500000 return  //writing, don't close
+   test (k & #400000) ne 0
+   ifso JSYS(#22,TACS)          //close and release
+   ifnot JSYS(#23,TACS)         //just release
+ }endread
+
+and EndWrite(j,lhpart) be
+ {endwrite
+   let k_nil
+   unless j>0 return
+   TACS|1_rh j
+   JSYS(#24,TACS)
+   k_lh TACS|2
+   TACS|1_rh j
+   if NumbArgs()=2 do lh TACS|1_lhpart
+   if (k&#200) eq 0 return
+   test (k&#400000) ne 0
+   ifso JSYS(#22,TACS)
+   ifnot JSYS(#23,TACS)
+ }endwrite
+
+and CLOSF(jfn) be
+ { let v_vec 20
+   v|1_jfn
+   JSYS(#22,v)
+ }
+
+
+// Write a single precision FPT number 
+// 1 arg: n: OUTPUT assumed as stream and 0 assumed as AC3 to FLOUT
+// 2 args: 0 assumed as AC3 to FLOUT
+
+and WriteR(stream,n,AC3)_valof
+ { let na_NumbArgs()
+   if na=1 do
+    { n_stream
+      stream_OUTPUT
+    }
+   if na<3 do AC3_0
+   let b_vec 20
+   let pb_POINT(7,b,-1)
+   let v_vec 20
+   v|1_stream
+   v|2_n
+   v|3_AC3
+   if stream<0 do v|1_pb
+   let t_JSYS(#233,v)           //FLOUT
+   if t ne 2 do resultis -v|3
+   if stream<0 do
+    { let d_ILDB(lv pb)
+      if d=0 do break
+      BOUT(OUTPUT,d)
+    } repeat
+   resultis 1
+ }
+
+
+and SIN(jfn,ascstr,bc,tb)_valof
+ { test jfn<0 then Help("BCPL: SIN for functional input streams is not implemented yet*n")
+   or
+    { let v_vec 20
+      v|1_jfn
+      v|2_ascstr
+      v|3_(NumbArgs()=4)=>bc,-bc
+      v|4_tb
+      JSYS(#52,v)               //SIN
+      EofFlg_false
+      let x_vec 20
+      x|1_jfn
+      JSYS(#24,x)               //GTSTS
+      if ((lh x|2)& #1000) ne 0 do EofFlg_true
+      test bc=0 then resultis v|2
+      or resultis bc-((NumbArgs()=4) => v|3,-v|3)
+    }
+ }
+
+and SOUT(jfn,ascstr,bc,tb)_valof
+ { test jfn<0 then Help("BCPL: SOUT for functional output streams is not implemented yet*n")
+   or
+    { let v_vec 20
+      v|1_jfn
+      v|2_ascstr
+      v|3_(NumbArgs()=4)=>bc,-bc
+      v|4_tb
+      JSYS(#53,v)               //SOUT
+      test bc=0 then resultis v|2
+      or resultis bc-((NumbArgs()=4) => v|3,-v|3)
+    }
+ }
+
+and Help(X,nil repname 20) be
+{ let t _ OUTPUT
+  OUTPUT _ CreateOutput(0)
+  WriteS ("Help called ... ")
+  WriteS ("*n")
+for i_1 to NumbArgs() do WriteS(rv(lv X-1+i))
+  OUTPUT _ t
+  finish
+ }
+

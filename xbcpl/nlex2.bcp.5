@@ -1,0 +1,345 @@
+
+// BCPL Compiler -- Lexical Analyzer, Part 2.
+
+// Rch  Read the next character from stream INPUT into Ch.
+// OpenSource Open a source stream.
+// *JfnToString	Convert a jfn to a BCPL string having the file name
+// DictionaryEntry Enter a name into the dictionary.
+// DoControl Process a control line.
+// *UPSToSixbit	Convert an unpacked string to a "sixbit" value
+// *SeparateFN	Separate an unpacked file name string into fields
+// *GetConnDir	Get the directory number of the connected directory
+// LinePtr  Return packed pointer to the character currently under
+//-- scan.
+// DoGet  Process the GET compiler directive.
+// DictGetFree Get space from free space, for the hash-table lookup
+//-- routines.
+// *lex2rw  used by DoControl to read a word on a control line
+// * => local to this file only
+
+get "<BCPL>utilhead"
+get "<BCPL>head"
+get "<BCPL>dicthead"
+get "<XBCPL>headbcpl"
+get "<XBCPL>headlex"            // For communication in LEX and CAE.
+get "<XBCPL>headcaecon"         // Lexemes.
+
+//Home base for the following statics
+static                          // Scalars used by LEX.
+{ ReadAhead :   false           // true implies a token has been read
+                                //-- ahead, and is in ExtraSymb.
+  ExtraSymb :   nil             // Holds a token that has been read
+                                //-- ahead, if any.
+  LastItem :    0               // Last item processed by LexOut.
+  NLPending :   false           // true if a new line has been
+                                //-- encountered.
+  Ch :          nil             // Each character read by Rch is stored
+                                //-- here.
+  SWcontrol :   false           // Set to true only when processing a
+                                //-- control line.
+  DictO :       nil             // * (local static) Here DictionaryEntry leaves a useful
+                                //-- datum.
+  RequireTable: vec RequireSize	// rel files to be loaded with this one
+  RequestTable: vec RequestSize	//rel libraries to be searched when this is loaded
+  DebugSW:      false	//used in conjunction with /d and ::ifdebug
+   // *FixName	Ensure .BCP extension to source file name
+ }
+
+let Rch() be                    // Read the next character into Ch and
+                                //-- its character pointer into
+                                //-- CharPtr.
+{ l:
+  Ch:=JRch(INPUT)
+  if SWupper & $A le Ch le $Z do Ch := Ch + #40
+  if Ch eq #12 do Ch := $*n
+  if Ch eq 0 do goto l
+  if Ch eq #100 do
+  { unless SWupper do goto l
+    Ch:=JRch(INPUT)
+    test Ch eq #100 then
+    { WUPFLG:=true
+      Ch:=JRch(INPUT)
+     }
+    or if $a le Ch le $z do Ch:=Ch&#737
+   }
+  if WUPFLG do if $a le Ch le $z do Ch:=Ch&#737
+  LineP := LineP + 1
+  if LineP > LineT do LineP := 0
+  LineV|LineP := Ch
+ }
+
+and OpenSource( Name) be        // Open a file of source input.
+{ GetV|GetP := Curfile ,, INPUT // Remember current input status.
+  if GetP ge GetT do CAEreport(-10,,97)
+                                // Excessive nesting of gets.
+  GetP := GetP + 1
+  INPUT := FindInput(Name)      // Yes, so just open the stream.
+  if INPUT=0 do finish
+  Curfile := GetnameP           // Index in GetnameV of the current
+                                //-- file.
+  if GetnameP ge GetFileMax do CAEreport(-10,,97)
+                                // Too many files.
+  JfnToString(INPUT,Name)
+  INPUT:=JSETUP(INPUT)
+  let V := 0
+  unless Name eq 0 do
+  { let t := ( q4 Name|0 ) / 4  // Number of words in the packed
+                                //-- string.
+    V := Newvec(t+1)            // The place to store the string.
+    V|0:=1                      // for CHAIN in symbol table stuff
+    V:=V+1
+    for k := 0 to t do V|k := Name|k
+                                // Copy the string.
+   }
+  GetnameV|GetnameP :=V
+  GetnameP := GetnameP + 1
+  Curline := JRFPTR(INPUT)
+ }
+
+and JfnToString(jfn,s):=valof
+{ let v:=vec 20
+  let str:=vec 30
+  v|1:=-1,,str
+  v|2:=jfn
+  v|3:=#11110,,1
+  JSYS(#30,v)                   // JFNS
+  ASCIZToString(str,s)
+  resultis s
+ }
+
+// The call    T _ DictionaryEntry(Name)    causes Name to be looked up
+//-- in the dictionary.  The
+// result is the address of the dictionary entry, so that the string is
+//-- found at T+1.  If the name was
+// not previously entered, it is put in with a datum of 1.  As a side
+//-- effect, the global
+// variable DictO gets the same value that is returned.
+
+and DictionaryEntry(Name) := valof
+{                               // external { Enter }   //  Joe
+                                //-- Maleson"s dictionary routine.
+  let Sw := Enter(Name, lv DictO, 1)
+                                // Look up the name.
+  DictO := DictO + DictOffset   // Un-relativize the result.
+  unless Sw do rv DictO := 1
+  resultis DictO
+ }
+
+and DoControl() be              // Process a control line.
+{ let T := nil                  // A temp.
+  let ch:=nil
+  let v:=vec 20
+  DictO := 0
+  lex2rw(v,lv ch)
+  DictionaryEntry(v)
+  if DictO eq 0 do
+  { CAEreport(2,,210); until Ch=$*n \ Ch=$*c \ Ch=$*l do Rch() ; return
+   }                            // Improper control word.
+  T := q2 rv DictO              // The lexeme itself.
+  if T < 0 do T := ~ T          // It"s OK if it is currently
+                                //-- unreserved.
+unless T=IFDEBUG do
+{
+  DictO := 0                    // Read the parameter.
+  lex2rw(v,lv ch)
+}
+
+  switchon T into
+  { case REQUIRE:
+                  {             // v has file name
+
+// do it
+// i.e. set up next (2 word) entry in RequireTable
+// and increment RequireTable|0
+
+                    let nnn:=vec 30
+                    RequireTable|0:=RequireTable|0+1
+                    let ups:=vec 30
+                    Unpackstring(v,ups)
+                    let dir:=vec 30
+                    SeparateFN(ups,dir,nnn)
+                    RequireTable|((RequireTable|0)*2-1):=
+                      UPSToSixbit(nnn)
+                    test dir|0=0 then ups|1:=GetConnDir()
+                    or
+                    { Packstring(dir,nnn)
+                      StringToASCIZ(nnn,dir)
+                      ups|1:=1
+                      ups|2:=-1,,dir
+                      ups|3:=0
+                      unless JSYS(#40,ups)=3
+                      do Help("Bad REQUIRE or REQUEST file directory name*n")
+                     }
+                    RequireTable|((RequireTable|0)*2):=0,,ups|1
+                    if ch=$*n \ ch=$*c \ ch=$*l do break
+                    lex2rw(v,lv ch)
+                   }
+                  repeat
+                  return
+
+    case REQUEST:
+                  {             // v has file name
+
+// do it
+// i.e. set up next (2 word) entry in RequestTable
+// and increment RequestTable|0
+
+                    let nnn:=vec 30
+                    RequestTable|0:=RequestTable|0+1
+                    let ups:=vec 30
+                    Unpackstring(v,ups)
+                    let dir:=vec 30
+                    SeparateFN(ups,dir,nnn)
+                    RequestTable|((RequestTable|0)*2-1):=
+                      UPSToSixbit(nnn)
+                    test dir|0=0 then ups|1:=GetConnDir()
+                    or
+                    { Packstring(dir,nnn)
+                      StringToASCIZ(nnn,dir)
+                      ups|1:=1
+                      ups|2:=-1,,dir
+                      ups|3:=0
+                      unless JSYS(#40,ups)=3
+                      do Help("Bad REQUIRE or REQUEST file directory name*n")
+                     }
+                    RequestTable|((RequestTable|0)*2):=0,,ups|1
+                    if ch=$*n \ ch=$*c \ ch=$*l do break
+                    lex2rw(v,lv ch)
+                   }
+                  repeat
+                  return
+
+    case IFDEBUG:
+                  { unless DebugSW do
+                    {
+                      { Rch()
+                       }
+                      repeatuntil Ch=$*n \ Ch=$*l \ Ch=$*c
+                     }
+                    return
+                   }
+    default:
+   }
+  DictionaryEntry(v)
+
+  switchon T into
+  { case RESERVE:
+                    { if DictO eq 0 do { CAEreport(2,,212); endcase }
+                      let T := q2 rv DictO
+                      if T < 0 do q2 rv DictO := ~ T
+                      if T eq 0 do CAEreport(2,,212)
+                                   // It never was a reserved word.
+                      if ch=$*n \ ch=$*c \ ch=$*l do break
+                      DictO := 0
+                      unless lex2rw(v,lv ch) do break
+                      DictionaryEntry(v)
+                     }
+                    repeat
+                    endcase
+
+    case UNRESERVE:
+                    { if DictO eq 0 do { CAEreport(2,,212); endcase }
+                      let T := q2 rv DictO
+                      if T > 0 do q2 rv DictO := ~ T
+                      if T eq 0 do CAEreport(2,,212)
+                      if ch=$*n \ ch=$*c \ ch=$*l do break
+                      DictO := 0
+                      unless lex2rw(v,lv ch) do break
+                      DictionaryEntry(v)
+                     }
+                    repeat
+                    endcase
+
+    case SYNONYM:
+                    { if DictO eq 0 do { CAEreport(2,,213); endcase }
+                      let T := DictO
+                      DictO:=0
+                      lex2rw(v,lv ch)
+                      DictionaryEntry(v)
+                      let v := q2 rv DictO
+                      if v < 0 do v := ~ v
+                      if v eq 0 do { CAEreport(2,,213); endcase }
+                      lh rv T := lh rv DictO
+                      q2 rv T := v
+                      endcase
+                     }
+
+    default:        CAEreport(2,,210)
+   }
+ }
+
+and UPSToSixbit(ups):=valof
+{ let x:=0
+  for i:=1 to ups|0 do x:=((((ups|i)&#137)+#40)&#77)+(x lshift 6)
+  resultis x lshift ((6-ups|0)*6)
+ }
+
+and SeparateFN(bigups,dirups,restups) be
+{ dirups|0:=0
+  let j:=1
+let k_1
+if bigups|k=$*" do k_k+1
+  restups|0:=0
+  if bigups|k=$<
+  do for i:=k+1 to bigups|0 do
+     { if bigups|i=$> do { j:=i+1 ; break }
+       dirups|0:=dirups|0+1
+       dirups|(dirups|0):=bigups|i
+      }
+  for i:=j to bigups|0 do
+  { if bigups|i=$. \ bigups|i=$*" do break
+    restups|0:=restups|0+1
+    restups|(restups|0):=bigups|i
+   }
+ }
+
+and GetConnDir():=valof
+{ let v:=vec 20
+  JSYS(#13,v)                   // GJINF
+  resultis (0,,v|2)
+ }
+
+and LinePtr() := Curfile ,, Curline
+
+and DoGet(Name) be              // Process the GET compiler directive.
+{ FixName(Name)                 // Insure that the name ends in ".B".
+  LastItem := 0                 // No insertion of SEMICOLON or DO.
+  OpenSource(Name)              // Open the next input stream.
+ }
+
+// This routine is called from only Enter, the dictionary-lookup
+//-- package.
+
+and DictGetFree(n) :=           // Return the address of a block of n
+                                //-- words.
+Newvec(n-1) - DictOffset
+
+and lex2rw(strng,chlv) :=valof
+{ let v:=vec 100
+  v|0:=0
+  { Rch()
+   }
+  repeatwhile Ch=$*s \ Ch=$*t \ Ch=$,
+  if Ch=$*n \ Ch=$*c \ Ch=$*l do resultis false
+  { v|0:=v|0+1
+    v|(v|0):=Ch
+    Rch()
+    if Ch=$*n \ Ch=$*s \ Ch=$*l \ Ch=$*c \ Ch=$*t \ Ch=$, do break
+   }
+  repeat
+  Packstring(v,strng)
+  rv chlv:=Ch
+  resultis true
+ }
+
+and FixName(X) be
+{ let QQ := vec 50
+  Unpackstring(X,QQ)
+  let Num := QQ|0
+  for i := 1 to Num
+  do if QQ|i = $. do return
+  QQ|0, QQ|(Num+1), QQ|(Num+2), QQ|(Num+3), QQ|(Num+4) :=
+    Num+4, $., $B,$C,$P
+  Packstring(QQ,X)
+ }
+

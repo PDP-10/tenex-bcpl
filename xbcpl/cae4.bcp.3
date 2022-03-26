@@ -1,0 +1,124 @@
+
+// BCPL Compiler -- Part 4 of CAE.
+
+// Rstruct       --  Read a structure declaration.
+// Rqualname     --  Read a qualified name (a structure reference).
+// *IsStructItem  --  Is parameter a structure declarator, such as BIT?
+// * => local to this compilation only.
+
+get "<xbcpl>headcae"
+get "<bcpl>head"
+
+// Read a structure declaration with precedence P.  If P _ 1, stop on
+//-- encountering OVERLAY,
+// while if P _ 0 keep reading to the next SECTKET.
+
+let Rstruct(P) := valof
+{ let ThisLine := LinePtr()
+  let Name, Rep, Count := 0, 0, 0
+  let A, B := nil, nil
+
+  if Symb eq FILL do
+  { Nextsymb()
+    unless IsStructItem(Symb) do
+    { CAEreport(167); A := List2(FILL, WORD); goto ReadMore
+     }
+    let SI := Symb
+    Nextsymb()
+    A := List2(FILL, SI)
+    goto ReadMore
+   }
+
+  if Symb eq NAME do
+  { Name := List2(NAME, V|0)
+    Nextsymb()
+    if Symb eq UPLUMP do
+    { Nextsymb()
+      let L := Rexp(0)          // Read the limit.
+      test Symb eq UPLUMP       // Is there a second limit?
+      then { Nextsymb(); Rep := List3(REP, L, Rexp(0)) }
+                                // Yes, so read it.
+      or Rep := List3(REP, 0, L)
+                                // No.
+     }
+   }
+
+  if IsStructItem(Symb) do
+  { let SI := Symb
+    Nextsymb()
+    unless Symb eq SECTKET \ Symb eq OVERLAY \ Symb eq SEMICOLON
+    do Count := Rexp(0)
+    A := List5(SDATOM, Name, Rep, SI, Count)
+    goto ReadMore
+   }
+
+  if Symb eq SEMICOLON do Nextsymb()
+                                // Semicolon is optional here.
+  unless Symb eq SECTBRA do { CAEreport(160); resultis 0 }
+
+  { let V1 := vec BRACKETLABEL
+    for k := 0 to V|0 do V1|k := V|k
+    Nextsymb()
+    A := Rstruct(0)
+    test Symb eq SECTKET
+    ifso test EqVec(V1) then Nextsymb()
+         or CAEreport(4,,69)
+    ifnot CAEreport(5)
+    A := List4(SD, Name, Rep, A)
+   }
+
+ReadMore:                       // Come here to keep reading.
+  switchon Symb into
+  { case SEMICOLON:
+                    { if P > 0 resultis A
+                      Nextsymb()
+                      let L := LinePtr()
+                      B := Rstruct(0)
+                      A := List3(SEQ, A, List3(LINE, L, B))
+                      goto ReadMore
+                     }
+
+    case OVERLAY:
+                    { if P > 0 resultis A
+                      Nextsymb()
+                      let L := LinePtr()
+                      B := Rstruct(1)
+                      A := List3(OVERLAY, A, List3(LINE, L, B))
+                      goto ReadMore
+                     }
+
+    case SECTKET:   resultis List3(LINE, ThisLine, A)
+
+    default:        CAEreport(161)
+                                // CAN WE DO BETTER ABOUT
+                                //-- THISAAAA?AAAA?AAAA?
+                    resultis ERRORNAME
+
+                                // I THINK WE WILL GET A BETTER MESSAGE
+                                //-- LATER.
+   }
+ }
+
+and Rqualname() := valof
+{ let A := nil
+  Nextsymb()
+  unless Symb eq NAME do { CAEreport(168); resultis ERRORNAME }
+  A := List2(NAME, V|0)
+  Nextsymb()
+  if Symb eq UPLUMP do { Nextsymb(); A := List3(UPLUMP, A, Rexp(37)) }
+  if Symb eq DOT do A := List3(DOT, A, Rqualname())
+  resultis A
+ }
+
+and IsStructItem(X) :=          // Is X a structure declarator?
+selecton X into
+{ case BIT:
+  case BITN:
+  case BITB:
+  case BYTE:
+  case BYTEN:
+  case CHAR:
+  case WORD:  true
+  default:    false
+ }
+

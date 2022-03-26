@@ -1,0 +1,127 @@
+manifest
+{
+// The following constants are the bit assignments for GTJFN.
+// They are used as the 5th argument of OpenFile or the 2nd
+// argument of GetJFN. Notice that they can be either added
+// or inclusive-ored together.
+//
+// Example: ofOutput+ofOldFile+ofMesage+ofConfirm
+// or       ofOutput\ofOldFile\ofMessage\ofConfirm
+
+  ofOutput:	#400000,,0	// For output use
+  ofNewFile:	#200000,,0	// New file only
+  ofOldFile:	#100000,,0	// Old file only
+  ofMessage:	#40000,,0	// Print message
+  ofConfirm:	#20000,,0	// Confirmation required
+  ofTemporary:	#10000,,0	// Temporary file
+  ofRetype:	#4000,,0	// Retype name when complete
+  ofNoAccess:	#2000,,0	// No access by other forks
+  ofIgnoreDeleted:
+		#1000,,0	// Ignore deleted bit
+  ofAssignJFN:	#600,,0		// Assign JFN, other on failure
+  ofAssignOnly:	#400,,0		// Assign JFN, error on failure
+  ofInputStars:	#100,,0		// Allow stars on input
+  ofOutputStars:#40,,0		// Allow output stars
+  ofReturnFlags:#20,,0		// Flags back
+  ofScratch:	#10,,0		// Scratch file
+
+// The following constants are the bit assignments for OPENF.
+// They are used as the 1st argument to OpenFile or the 3rd argument
+// to OpenF.
+//
+// Example: ofRead+ofWrite+ofExecute
+// or       ofRead\ofWrite\ofExecute
+
+  ofRead:       #200000	// Readable
+  ofWrite:	#100000		// Writeable
+  ofExecute:	#40000		// Executable
+  ofAppend:	#20000		// Appendable
+  ofPerPageTable:
+		#10000		// Per page table access
+  ofProtected:	#4000		// If they implement it
+  ofThawed:	#2000		// Thawed opening
+  ofWait:	#1000		// Always wait to open
+  ofNoChangeDate:
+		#400		// Don't change access date
+  ofNoWait:	#200		// Don't wait to open
+
+// These constants are the error returns for the functions defined
+// here.
+// ofBadArgs,,N -- error in the Nth argument -- if N=0, wrong number of
+//                 arguments
+// ofGTJFNerror,,N -- GTJFN failed, error number N
+// ofOPENFerror,,N -- OPENF failed, error number N
+// ofBadOpenF,,N -- Error on internal call to OpenF by OpenFile. N is
+//                  right half of error # returned by OpenF
+// ofBadGetJFN,,N -- Error on internal call to GetJFN by OpenFile. N
+//                   is the right half of error returned by GetJFN.
+
+  ofBadArgs:	-1		// Bad arguments on call
+  ofGTJFNerror:	-2		// GTJFN error return
+  ofOPENFerror:	-3		// OPENF error return
+  ofBadOpenF:	-4
+  ofBadGetJFN:	-5
+}
+
+global
+{ GetJFN:	#60
+// GetJFN(Source, Bits, DefaultString, MainString, JFN)
+// Source		Where to read the file name from. 0 means
+//			return TENEX primary I/O file, #100 if the
+//			ofOutput is not set, #101 otherwise. 1 means
+//			prompt user and read from main input file,
+//			2 means read from main input file, but don't
+//			prompt. If Input<0, it is assumed to be 
+//			the negative of a function to be called. Refer
+//			to FindInput and CreateOutput.  If
+//			Input>0 it is assumed to be a BCPL string of
+//			the file name. Source defaults to 1.
+// Bits			See list. Defaults to require confirmation.
+// DefaultString	BCPL string of default file name. Any fields
+//			which are not to be defaulted should be empty.
+//			Examples: "<BCPL>.BCP", "BCPL", ".BCP;5;P777760"
+//			Defaults to system standards. (DSK:, connected
+//			directory, null extension, highest or one-higher
+//			version depending on ofOutput bit).
+// MainString		String to be read before accepting input from
+//			TTY: if Input is 1 or 2. Defaults to no string.
+// JFN			Special JFN to be assigned if bits are on.
+//
+// Result is the full word Flags,,JFN if successful (notice that
+// the 20-bit is off if successful), otherwise error indication
+// per above constants -- ofBadArgs, ofGTJFNerror.
+
+  OpenF:	#61
+// OpenF(JFN, ByteSize, Bits)
+// JFN is a standard JFN, or #100 or #101 or -1 (controlling TTY)
+// ByteSize is between 1 and 36, defaults to 7
+// Bits from list of constants above, also special modes for device,
+// such as NET: or DTAn:. Defaults to R, W, E access.
+// 
+// Result is 0 for success, ofBadArgs,,N, or ofOPENFerror,,N
+
+  OpenFile:	#62
+// OpenFile(Mode, Source, Size, DefaultString, Bits, InitialString, JFN)
+// Mode			Choice of bits for OPENF as shown above.
+//			Legal modes are: ofRead, ofWrite, ofExecute,
+//			ofAppend, ofPerPageTable, ofThawed, ofWait,
+//			ofNoWait, and ofNoChangeDate. Also, special
+//			modes for devices. For TTY:, only R, W and A
+//			modes are allowed. This argument is required,
+//			and does not default.
+// Source		Where the file name comes from; same as GetJFN.
+//			Defaults to 1 (read from TENEX primary input,
+//			prompting on TENEX primary output).
+// Size			Byte size. Must be from 1 to 36, defaults to 7.
+// DefaultString	String of fields to default, same as GetJFN
+// Bits			Name control bits from GTJFN. Legal bits are
+//			ofNewFile, ofOldFile, ofMessage, ofConfirm,
+//			ofTemporary, ofRetype, ofNoAccess,
+//			ofIgnoreDeleted, and ofOutput. Defaults to
+//			ofNewFile+ofConfirm+ofOutput unless R, A, or E
+//			access is set. If R, A or E access is given,
+//			defaults to ofOldFile+ofConfirm.
+// InitialString	String to read before accepting input from
+//			TTY: if source is 1 or 2. Defaults to no string.
+// JFN			Special JFN to be assigned if appropriate.
+}

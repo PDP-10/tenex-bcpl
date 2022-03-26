@@ -1,0 +1,320 @@
+
+// BCPL Compiler -- Part 2 of CAE.
+
+// Rexp The main expression reader.
+
+get "<xbcpl>headcae"
+get "<bcpl>head"
+
+let Rexp(n) := valof
+{ let A, B, C, Op := nil, nil, nil, nil
+
+  if Symb=NAME \ Symb=RNAME do  // This is the usual case, so give it
+                                //-- fast service.
+  { A := List2(Symb, V|0); Nextsymb()
+    goto L
+   }
+
+// Read the next operand, and store it into A.
+
+  switchon Symb into            // Branch on the leading operand of the
+                                //-- expression.
+  { default:          CAEreport(32)
+                      Nextsymb()
+                      resultis List2(NUMBER, 0)
+
+    case STRINGCONST:
+    case ASCIZCONST:  A := Newvec(1 + V|0)
+                      A|0 := Symb; for k := 1 to V|0 do A|k := V|k
+                      Nextsymb()
+                      endcase
+
+    case CHARCONST:   A := List2(CHARCONST, V|0)
+                      Nextsymb()
+                      endcase
+
+    case NUMBER:      A := List2(NUMBER, V|0)
+                      Nextsymb()
+                      endcase
+
+    case NIL:         A := NILNODE; Nextsymb(); endcase
+
+    case TRUE:        A := TRUENODE; Nextsymb(); endcase
+
+    case FALSE:       A := FALSENODE; Nextsymb(); endcase
+
+    case NUMBARGS:
+    case LEFTSIDE:    unless SWbits << SW.Ncs do CAEreport(36)
+
+    case ERROR:       A := List1(Symb)
+                      Nextsymb()
+                      endcase
+
+    case RBRA:        Nextsymb()
+                      A := Rexp(0)
+                      unless Symb eq RKET do CAEreport(15)
+                      Nextsymb()
+                      endcase
+
+    case VALOF:       Nextsymb()
+                      A := Rcom(Rcom)
+                      A := List2(VALOF, A)
+                      endcase
+
+    case SELECTON:
+                      { Nextsymb()
+                        A := Rexp(0)
+                        unless Symb eq INTO do CAEreport(60)
+                        Nextsymb()
+                        unless Symb eq SECTBRA do
+                        { CAEreport(66)
+                          Nextsymb()
+                          resultis List2(NUMBER, 0)
+                         }
+                        let V1 := vec BRACKETLABEL
+                        for k := 0 to V|0 do V1|k := V|k
+                        Nextsymb()
+                        B := Rselect(false)
+                        test Symb eq SECTKET
+                        ifso test EqVec(V1) then Nextsymb()
+                             or CAEreport(4,,69)
+                        ifnot { CAEreport(67); Nextsymb() }
+                        A := List3(SWITCHON, A, B)
+                        A := List2(VALOF, A)
+                        endcase
+                       }
+
+    case CSIZE:                 // number of address units in a
+                                //-- structure item
+    case SIZE:                  // Size of a structure item.
+    case OFFSET:                // Offset of a structure item
+                      Op := Symb
+                      A := List2(Op, Rqualname())
+                      endcase
+
+    case LH:
+    case RH:
+    case Q1:
+    case Q2:
+    case Q3:
+    case Q4:
+    case LHZ:
+    case RHZ:
+    case Q1Z:
+    case Q2Z:
+    case Q3Z:
+    case Q4Z:
+    case LV:
+    case RV:          Op := Symb
+                      Nextsymb()
+                      A := Rexp(35)
+                      A := List2(Op, A)
+                      endcase
+
+    case PLUS:        Nextsymb()
+                      A := Rexp(35)
+                      endcase
+
+    case MINUS:       Nextsymb()
+                      A := Rexp(35)
+                      A := List2(NEG, A)
+                      endcase
+
+    case VEC:         Nextsymb()
+                      A := Rexp(30)
+                      A := List2(VEC, A)
+                      endcase
+
+    case FPLUS:       Nextsymb()
+                      A := Rexp(35)
+                      endcase
+
+    case FMINUS:      Nextsymb()
+                      A := Rexp(35)
+                      A := List2(FNEG, A)
+                      endcase
+
+    case NOT:         Nextsymb()
+                      A := Rexp(25)
+                      A := List2(NOT, A)
+                      endcase
+
+    case LIST:
+    case TABLE:       Op := Symb
+                      Nextsymb()
+                      A := Rexp(11)
+                      A := List2(Op, A)
+                      endcase
+
+   }
+
+L:                              // An operand has been read.  Now look
+                                //-- at the next operator.
+  switchon Symb into
+  { default:        resultis A
+
+    case NAME:                  // Not legal BCPL, but a common error.
+                    CAEreport(45)
+                    B := List2(NAME, V|0)
+                    Nextsymb()
+                    resultis List3(FNAP, A, B)
+
+    case RBRA:      Nextsymb()
+                    test Symb eq RKET
+                                // Have empty parentheses been scanned?
+                    ifso B := 0 // Yes.
+                    ifnot
+                    { B := Rexp(0)
+                      unless Symb eq RKET do CAEreport(19)
+                     }          // No, so read parameters.
+                    Nextsymb()
+                    A := List3(FNAP, A, B)
+                    goto L
+
+    case VECAP:     if n ge 40 resultis A
+                    Nextsymb()
+                    B := Rexp(40)
+                    A := List3(VECAP, A, B)
+                    goto L
+
+    case LEFTLUMP:
+    case RIGHTLUMP: if n ge 38 resultis A
+                    Op := Symb
+                    B := Rqualname()
+                    A := List3(Op, A, B)
+                    goto L
+
+    case DIV:
+    case REM:
+    case MULT:      if n ge 35 resultis A
+                    Op := Symb
+                    Nextsymb()
+                    B := Rexp(34)
+                    A := List3(Op, A, B)
+                    goto L
+
+    case PLUS:
+    case MINUS:     if n ge 34 resultis A
+                    Op := Symb
+                    Nextsymb()
+                    B := Rexp(34)
+                    A := List3(Op, A, B)
+                    goto L
+
+    case FPLUS:
+    case FMINUS:    if n ge 34 resultis A
+                    Op := Symb
+                    Nextsymb()
+                    B := Rexp(34)
+                    A := List3(Op, A, B)
+                    goto L
+
+    case FMULT:
+    case FDIV:      if n ge 35 resultis A
+                    Op := Symb
+                    Nextsymb()
+                    B := Rexp(34)
+                    A := List3(Op, A, B)
+                    goto L
+
+    case FLS:
+    case FEQ:
+    case FGR:
+
+    case EQ:
+    case NE:
+    case LS:
+    case GR:
+    case LE:
+    case GE:        if n ge 30 resultis A
+                    C := 0
+                    { Op := Symb
+                      Nextsymb()
+                      B := Rexp(30)
+                      A := List3(Op, A, B)
+                      C := C eq 0 => A, List3(LOGAND, C, A)
+                      switchon Symb into
+                      { default:
+                                // All done unless it"s an extended
+                                //-- relation.
+                          A := C
+                          goto L
+
+                        case EQ:
+                        case NE:
+                        case LS:
+                                // It"s an extended relation.
+                        case GR:
+                        case LE:
+                        case GE:
+                        case FLS:
+                        case FEQ:
+                        case FGR:
+                       }
+                      A := B
+                     }
+                    repeat
+
+    case LSHIFT:
+    case LSCALE:
+    case RSHIFT:
+    case RSCALE:    if n ge 25 resultis A
+                    Op := Symb
+                    Nextsymb()
+                    B := Rexp(30)
+                    A := List3(Op, A, B)
+                    goto L
+
+    case LOGAND:    if n ge 24 resultis A
+                    Nextsymb()
+                    B := Rexp(23)
+                    A := List3(LOGAND, A, B)
+                    goto L
+
+    case LOGOR:     if n ge 23 resultis A
+                    Nextsymb()
+                    B := Rexp(22)
+                    A := List3(LOGOR, A, B)
+                    goto L
+
+    case EQV:
+    case NEQV:
+    case EQUIV:
+    case NEQUIV:                // ::::::: ::::::: ::::::: :::::::
+                    if n ge 22 resultis A
+                    Op := Symb
+                    Nextsymb()
+                    B := Rexp(22)
+                    A := List3(Op, A, B)
+                    goto L
+
+    case COND:      if n ge 13 resultis A
+                    Nextsymb()
+                    B := Rexp(12)
+                    unless Symb eq COMMA do CAEreport(30)
+                    Nextsymb()
+                    C := Rexp(12)
+                    A := List4(COND, A, B, C)
+                    goto L
+
+    case COMCOM:    if n ge 14 resultis A
+                    Nextsymb()
+                    B:=Rexp(13)
+                    A:=List3(COMCOM,A,B)
+                    goto L
+
+    case REPNAME:
+    case REPVAL:    if n ge 12 resultis A
+                    Op := Symb
+                    Nextsymb()
+                    B := Rexp(12)
+                    A := List3(Op, A, B)
+                    goto L
+
+    case COMMA:     if n ge 12 resultis A
+                    Nextsymb()
+                    B := Rexp(11)
+                    A := List3(COMMA, A, B)
+                    goto L
+   }
+ }

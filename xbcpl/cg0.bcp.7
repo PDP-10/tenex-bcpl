@@ -1,0 +1,286 @@
+
+// BCPL Compiler -- Code Generator main program.
+
+// *CGWritech
+// Cg  The main program of the code generator.
+// Initstack
+// Readop  Read an operator from the input stream.
+// ReadNM  Read a number from the input stream.
+// ReadL  Read a label from the input stream.
+// *CGreport Special error handler for the code generator.
+// Push
+// StartStack
+// Pop
+// Elt
+
+get "<bcpl>utilhead"
+get "<xbcpl>headcg"
+
+//home base for these global statics
+static
+{
+SSP:0
+  Arg1 :       0
+  Arg2 :       0
+  TempV :      0
+  TempT :      0
+  ConstV :     0
+  ConstP :     0
+  ConstL :     0
+  Svec :       0
+  SvecP :      0
+  SvecT :      0
+  StatV :      0
+  StatP :      0
+  Op :         0
+  MAXXRNUMBER: 0
+  P10regV:     0
+  globinfo:    0
+  Block1JFN:   0
+  Report:      0
+  OutA:        0
+  OutB:        0
+  Ch:          0
+  bl2pptr:     #441100560000
+  bl2sptr:     #441100560000
+  Block2JFN:   0
+  bl1pptr:     #441100600000
+  bl1sptr:     #441100600000
+  flgstk:      vec 20
+MaxStack: 0
+ }
+
+//local statics
+static
+{ BadOcode : false
+  MacroName:   vec 40
+ }
+
+let CGWritech(a,b) be
+{ if NumbArgs()=1 do
+  { b:=a
+    a:=OUTPUT
+   }
+  test b=$*n then
+  { BOUT(a,$*c)
+    BOUT(a,$*l)
+   }
+  or BOUT(a,b)
+ }
+
+and Cg(snm,rnm,lnm,rootname) be
+{cgfap
+  let oldwr:=Writech
+
+// init VMILLER's statics
+
+  VMINIT()
+  bl2pptr:=#441100560000
+  bl2sptr:=#441100560000
+  bl1pptr:=#441100600000
+  bl1sptr:=#441100600000
+  Block2JFN:=0
+  BadOcode:=false
+  Writech:=CGWritech
+  let bbstrt:=NextParam()
+
+  OutA:= table BlockA,
+               nil,
+               0,
+               nil,
+               0,
+               0,
+               0
+  OutA|0,OutA|1,OutA|2,OutA|3,OutA|4,OutA|5,OutA|6:=
+    BlockA,nil,0,nil,0,0,0
+  OutB:= table BlockB,
+               nil,
+               0,
+               nil,
+               0,
+               0,
+               0
+  OutB|0,OutB|1,OutB|2,OutB|3,OutB|4,OutB|5,OutB|6:=
+    BlockB,nil,0,nil,0,0,0
+  Block1JFN:=0
+  let v1 := vec 200
+  ConstV, ConstP := v1, 0
+  let v1 := vec 200
+  ConstL := v1
+  let v1 := vec 300
+  Svec, SvecP, SvecT := v1, 0, 300
+  let v1 := vec 300
+  StatV, StatP:= v1, 0
+  let v1:=vec 1500
+  TempV := v1
+  TempT := TempV + 1500
+  let v1 := vec #20
+  P10regV := v1
+  for i:=0 to #17 do P10regV|i:=0
+                                // all regs empty
+let v1_vec 10
+MaxStack_v1
+StartStack(MaxStack,10)
+  Initstack(0)
+
+  flgstk|0:=1
+  flgstk|1:=false
+
+// initialize the index register limits
+
+  MAXXRNUMBER := 0              // for collection of max xr used
+let  XRBOT := 2                    // 1 for JSP & function results
+let  XRTOP := #15                  // 16 for stack, 17 for PDL
+
+  P10regV|0,P10regV|1 := -1,-1  // reserve these regs
+  P10regV|#16, P10regV|#17 := -1,-1
+
+  Report := CGreport
+  Curline := 0
+
+  if SWbits<<SW.MACfil then
+  { if lnm|0 eq 0 then
+    { let t:=rootname|0
+      rootname|(t+1):=$.
+      rootname|(t+2):=$M
+      rootname|(t+3):=$A
+      rootname|(t+4):=$C
+      rootname|0:=t+4
+      Packstring(rootname,MacroName)
+      rootname|0:=t
+     }
+   }
+  if lnm|0 ne 0 then
+  { MacroName:=lnm
+    SWbits<<SW.MACfil:=true
+   }
+  if SWbits<<SW.MACfil then MacroJFN:=CreateOutput(MacroName)
+  let v1:=vec GlobNMax+1
+  globinfo:=v1
+
+  RLINIT(SWbits<<SW.MACfil)
+  WRLST("TITLE ")
+  WRLST(snm)
+  WRLST(" translated to MACRO by BCPL*n")
+  WRLST("; the next JFCL is the first word in the REL file...*n;the address is the location of the start of the block b stuff*n")
+  WRMAC(JFCL,0,LABEL,bbstrt,0,0,0)
+  WRIMP()
+  WRLAB(bbstrt)
+  WRPU()
+  Scan()                        // DO THE WORK.
+
+  WRPU()
+  Outconsts()
+  Outnumbs()
+  WRLST("IMPURE:*n")
+
+  { let v:=vec 20
+    if rnm|0 eq 0 then
+    { let t:=rootname|0
+      rootname|(t+1):=$.
+      rootname|(t+2):=$R
+      rootname|(t+3):=$E
+      rootname|(t+4):=$L
+      rootname|0:=t+4
+      Packstring(rootname,rnm)
+      rootname|0:=t
+     }
+    Packstring(rootname,v)
+    CGPS2(v,rnm)
+   }
+  OUTPUT := MONITOR
+  if SWbits << SW.Debug do      // If debugging, print out the index
+                                //-- register usage information.
+  { WriteS("XR usage: ")
+    WriteOct(XRBOT)
+    WriteS(", ")
+    WriteOct(MAXXRNUMBER)
+    WriteS(", ")
+    WriteOct(XRTOP)
+    Writech(OUTPUT, $*n)
+
+// later on, perhaps, we can store these in the binary output file
+// but for now we will just have to print them.
+   }
+
+  if BadOcode do
+  { Curline := 0
+    Report(300)
+   }
+
+  Writech:=oldwr
+ }cgfap
+
+and Initstack(S) be
+{ Arg2, Arg1 := TempV, TempV + Tempsize
+  SSP := S
+  H1|Arg2, H2|Arg2, H3|Arg2, H5|Arg2 := LOCAL, 0, SSP-2, SSP-2
+  H1|Arg1, H2|Arg1, H3|Arg1, H5|Arg1 := LOCAL, 0, SSP-1, SSP-1
+ }
+
+and Readop():= valof
+{ Readch(INPUT,lv Ch)
+  if EofFlg resultis END
+  resultis Ch
+ }
+
+and ReadNM():= valof
+{ let n:=0
+  Readch(INPUT,lv Ch)
+  n:=Ch
+  Readch(INPUT,lv Ch)
+  n:=(n lshift 9)\Ch
+  Readch(INPUT,lv Ch)
+  n:=(n lshift 9)\Ch
+  Readch(INPUT,lv Ch)
+  n:=(n lshift 9)\Ch
+  resultis n
+ }
+
+and ReadL() := valof
+{ let n:=0
+  Readch(INPUT,lv Ch)
+  n:=Ch
+  Readch(INPUT,lv Ch)
+  n:=(n lshift 9)\Ch
+  resultis n
+ }
+
+and CGreport(n,gn) be           // Report an error.  As a special case,
+                                //-- -1 is for not yet implemented.
+{ let a:=OUTPUT
+  OUTPUT:=MONITOR
+  if n < 0 do
+  { BadOcode := true
+    return
+   }
+  BCPLreport(n)
+  if n=402 do
+  { WriteOct(gn)
+    WriteS("*n")
+   }
+  unless Curline eq 0 do Wfline(Curline)
+  OUTPUT:=a
+ }
+
+and Push(stack,elt)_valof
+{ rh stack|0_rhz stack|0+1
+if (lhz stack|0) le (rhz stack|0) do Help("Stack overflow*n")
+stack|(rhz stack|0)_elt
+resultis elt
+}
+
+and StartStack(stack,maxnumelts)_valof
+{ stack|0_maxnumelts,,0
+resultis stack
+}
+
+and Pop(stack)_valof
+{ let x_stack|(rhz stack|0)
+if (rhz stack|0) le 0 do Help("Stack underflow*n")
+rh stack|0_rhz stack|0-1
+resultis x
+}
+
+and Elt(stack)_stack|(rhz stack|0)
+

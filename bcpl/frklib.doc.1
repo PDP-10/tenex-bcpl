@@ -1,0 +1,808 @@
+
+
+
+
+
+                     discard this page
+
+     BCPL Fork Library         February 5, 1976          Page   1
+
+
+
+                          BCPL Fork Package
+
+
+
+     The fork library contains a set of routines for working with
+     TENEX  forks,  fork  groups, transfering data between forks,
+     and setting, clearing, and processing  JSYS  traps.   It  is
+     assumes   that   the   reader   is   familiar   with  forks,
+     capabilities, fork groups,  pages,  page  access,  and  JSYS
+     traps, as described in the TENEX JSYS Manual.  The head file
+     for the fork package is <BCPL>FORKHEAD.BCP.
+
+
+
+     General Fork Routines
+     _______ ____ ________
+
+     For convenience, the following fork referencing symbols  are
+     predefined:
+
+          fhThisFork              #400000
+          fhSuperior              rhz -1
+          fhTopOfJob              rhz -2
+          fhCurrentAndInferiors   rhz -3
+          fhInferiors             rhz -4
+          fhAllInJob              rhz -5
+          fhTopOfGroup            rhz -6
+
+
+     CreateFork(specs,acs) or CreateFork(specs) or CreateFork()
+
+          Creates a new fork and returns the fork handle  as  its
+          value.    specs   are  the  specification  flags  which
+                    _____
+          indicate properties to be initially given to the  list.
+          The   most   common   ones  are  defined  symbolically:
+          cfSameMap, cfSameCaps, and cfSetACs.  acs is  an  array
+                                                ___
+          of  the  initial values for the new fork's ACs.  If acs
+                                                              ___
+          is  given,  the  cfSetACs  flag  is  assumed.   If   no
+          arguments  are given to CreateFork, specs is assumed to
+                                              _____
+          be cfSameCaps.
+
+
+     KillFork(fork) or KillFork()
+
+          Kills fork.  If fork is not given, all  inferior  forks
+                ____      ____
+          are killed, ie, fhInferiors is assumed.
+
+
+     FreezeFork(fork) or FreezeFork()
+
+          fork is frozen.  If fork is  not  given,  all  inferior
+          ____                ____
+          forks are frozen.
+
+     BCPL Fork Library         February 5, 1976          Page   2
+
+
+
+     ResumeFork(fork) or ResumeFork()
+
+          Resumes execution of the previously  frozen  fork.   If
+                                                       ____
+          fork is not given, all inferiors are resumed.
+          ____
+
+
+     SetForkACs(fork,acs)
+
+          Sets the ACs of fork to the array given by acs.
+                          ____                       ___
+
+
+     ReadForkACs(fork,acs)
+
+          Reads the ACs of fork into the array given by acs.
+                           ____                         ___
+
+
+     HaltFork(fork) or HaltFork()
+
+          Halts fork.  If fork is not given,  all  inferiors  are
+                ____      ____
+          halted.
+
+
+     WaitForFork(fork)
+
+          Waits for fork to terminate.
+                    ____
+
+
+     ReleaseFork(fork) or ReleaseFork()
+
+          Releases the fork handle fork.  If fork is  not  given,
+                                   ____      ____
+          handles on all inferior forks are released.
+
+
+     ForkStatus(fork,pclv) or ForkStatus(fork)
+
+          Returns as its value, the status word of fork.  If pclv
+                                                   ____      ____
+          is given, the current pc of fork is set to the contents
+                                      ____
+          of it.
+
+
+     IsForkHalted(fork)
+
+          Returns true if fork has terminated (either voluntarily
+                          ____
+          or Involuntarily).  Otherwise, false is returned.
+
+
+     SpliceFork(fork1,fork2)
+
+          Makes  fork2  an  inferior  of  fork1.   The  value  of
+                 _____                    _____
+          SpliceFork  is  the  new fork handle which fork1 should
+                                                     _____
+          use to reference fork2.
+                           _____
+
+     BCPL Fork Library         February 5, 1976          Page   3
+
+
+
+     StartFork(fork,pc) or StartFork(fork)
+
+          If pc is less than 15, pc is assumed  to  be  an  index
+             __                  __
+          into  the  entry vector of fork, and fork is started at
+                                     ____      ____
+          the indicated position.  Otherwise, the pc of  fork  is
+                                                         ____
+          set  to  pc  and  the  fork is started at the indicated
+                   __
+          location.  If pc is not given, zero is assumed.
+                        __
+
+
+     LoadFork(fork,file)
+
+          Loads fork with the SAVE file given by  the  jfn  file.
+                ____                                        ____
+          The load is done via the GET JSYS.
+
+
+     GetForkIO(fork)
+
+          Returns the primary input and output jfns  of  fork  as
+                                                         ____
+          input,,output.
+
+
+     SetForkIO(fork,iofiles)
+
+          Sets  the  primary  input  and  output  jfns  of  fork.
+                                                            ____
+          iofiles should be of the form input,,output.
+          _______
+
+
+     EnableForkCaps(fork) or
+     EnableForkCaps(fork,posscaps) or
+     EnableForkCaps(fork,posscaps,enbcaps)
+
+          Sets the possible (posscaps) and the enabled  (enbcaps)
+                             ________                    _______
+          capabilities  for fork.  If posscaps or enbcaps are not
+                            ____      ________    _______
+          given, -1 is assumed.
+
+
+     ReadForkCaps(fork) or
+     ReadForkCaps(fork,posslv) or
+     ReadForkCaps(fork,posslv,enblv)
+
+          Reads the possible and enabled  capabilities  of  fork.
+                                                            ____
+          posslv  is the location where the possible capabilities
+          ______
+          are to be stored,  and  enblv  is  location  where  the
+                                  _____
+          enabled  capabilities  are the be stored.  If posslv or
+                                                        ______
+          enblv is zero, -1, true, or false, then data  will  not
+          _____              ____     _____
+          be  stored into the corresponding location.  posslv and
+                                                       ______
+          enblv are assumed to be zero if not given.   If  posslv
+          _____                                            ______
+          is  true  or  -1, then the possible capabilities is the
+              ____
+          value of  ReadForkCaps,  otherwise  the  value  is  the
+          enabled capabilities.
+
+     BCPL Fork Library         February 5, 1976          Page   4
+
+
+
+     GetEntryVector(fork)
+
+          Returns the entry vector for fork.
+                                       ____
+
+
+     SetEntryVector(fork,ev)
+
+          Sets the entry vector of fork to ev.
+                                   ____    __
+
+
+     SaveFork(fork,jfn,limits) or SaveFork(fork,jfn)
+
+          Performs the SAVE JSYS.  The  core  image  of  fork  is
+                                                         ____
+          written   onto  the  file  specified  by  jfn.   limits
+                                                    ___    ______
+          specifies which sections of fork are to be  saved.   If
+                                      ____
+          limits  is  zero, or is not given, then the entire core
+          ______
+          image of fork  is  saved.   The  format  of  limits  is
+                   ____                                ______
+          described in the JSYS Manual.
+
+
+     SSaveFork(fork,jfn,limits) or SSaveFork(fork,jfn)
+
+          Similar to SaveFork except that the SSAVE JSYS is  used
+          instead of SAVE.
+
+     BCPL Fork Library         February 5, 1976          Page   5
+
+
+
+     Fork Groups
+     ____ ______
+
+
+     CreateForkGroup(fork)
+
+          Creates a new fork group with fork as the top  fork  of
+                                        ____
+          the group.  CreateForkGroup returns fork as its value.
+                                              ____
+
+
+     GetGroupInfo(fork,info)
+
+          Performs the fork group equivalent of the  GJINF  JSYS.
+          info  is  a  vector  of  vec  4  into which the data is
+          ____
+          loaded:
+
+               info|1 gets the login directory
+               info|2 gets the connected directory
+               info|3 gets the job number
+               info|4 gets the controlling terminal
+
+
+     TopOfGroup(fork)
+
+          Returns the top fork of  the  group  which  fork  is  a
+                                                      ____
+          member of.
+
+
+     GetGroupTTY(fork)
+
+          Returns the controlling  terminal  of  the  fork  group
+          which fork is a member of.
+                ____
+
+
+     SetGroupTTY(fork,tty)
+
+          Sets the controlling terminal of the fork  group  which
+          fork  is  a  member  of.  If tty is -1, the controlling
+          ____                         ___
+          terminal of the fork group is set  to  the  controlling
+          terminal of the current job.
+
+     BCPL Fork Library         February 5, 1976          Page   6
+
+
+
+     Data Transfer Between Forks
+     ____ ________ _______ _____
+
+     For convenience,  the  following  page  access  symbols  are
+     predefined:
+
+          pmDelete        -1
+          pmRead          #100000
+          pmWrite         #40000
+          pmExecute       #20000
+          pmExists        #10000
+          pmIndirect      #4000
+          pmTrapToUser    #1000
+          pmCopyOnWrite   #400
+          pmPrivate       #200
+
+
+     PMAP(source,destination,access) or PMAP(source,destination)
+
+          Performs the PMAP JSYS.  source and destination are  of
+                                   ______     ___________
+          the form fork,,page# or jfn,,page#.  source may also be
+                                               ______
+          -1, or pmDelete, which will cause the page specified by
+          destination to be deleted.  access is the accessibility
+          ___________                 ______
+          to be given to  the  destination.   If  access  is  not
+                               ___________        ______
+          given, pmRead+pmWrite+pmexecute is assumed.  The access
+                                                           ______
+          bits may be in the left or right half of the word,  but
+          must  all be in the same half.  e.g., pmRead+pmWrite,,0
+          is the same as pmRead+pmWrite.
+
+
+     RMAP(forkpage,accesslv) or RMAP(forkpage)
+
+          Performs the RMAP JSYS to acquire a handle on a page in
+          a  fork.   forkpage  is  of  the  form  fork,,page#  or
+                     ________
+          jfn,,page#.  The handle on the page is returned as  the
+          value of RMAP.  If accesslv is given, the accessibility
+                             ________
+          of the page is put into the address given by  accesslv.
+                                                        ________
+          Note that the access information is in the left half of
+          the work.
+
+
+     ReadPageAccess(forkpage)
+
+          Gets the accessibility  of  a  page.   forkpage  is  as
+                                                 ________
+          described above.  The access information is returned as
+          the  value  of  ReadPageAccess.    Note   that   access
+          information  is  returned  in both halves of the value,
+          see the description of the RPACS  JSYS,  in  the  TENEX
+          JSYS Manual, for more information.
+
+
+
+     BCPL Fork Library         February 5, 1976          Page   7
+
+
+
+     SetPageAccess(forkpage,access)
+
+          Sets the accessibility of a page.  forkpage and  access
+                                             ________      ______
+          are  as  described  above.   See the description of the
+          SPACS  JSYS  in  the  TENEX  JSYS   Manual   for   more
+          information.
+
+
+     ForkWrite(fork,SourceAddr,DestAddr,n)
+
+          Transfers n words from the current  fork,  starting  at
+                    _
+          the  address  given  by SourceAddr, to fork starting at
+                                  __________     ____
+          the address given by DestAddr.
+                               ________
+
+
+     ForkRead(fork,SourceAddr,DestAddr,n)
+
+          Transfers n words from fork, starting  at  the  address
+                    _            ____
+          given  by  SourceAddr,  to the current fork starting at
+                     __________
+          the address given by DestAddr.
+                               ________
+
+
+     ForkWriteS(fork,SourcePtr,DestPtr)
+
+          Copies a PDP-10 string (ie, a series  of  bytes  ending
+          with  a  zero  byte) from the current fork, starting at
+          the byte pointer given by SourcePtr, to  fork  starting
+                                    _________      ____
+          at  the  byte  pointer given by DestPtr.  SourcePtr and
+                                          _______   _________
+          DestPtr may be actual byte pointers,  or  addresses  of
+          _______
+          byte pointers.  If they are addresses of byte pointers,
+          then they will be updated appropriately.
+
+
+     ForkReadS(fork,SourcePtr,DestPtr)
+
+          Copies a PDP-10 string from fork, starting at the  byte
+                                      ____
+          pointer   given  by  SourcePtr,  to  the  current  fork
+                               _________
+          starting  at  the  byte  pointer  given   by   DestPtr.
+                                                         _______
+          SourcePtr   and  DestPtr  are  as  described  above  in
+          _________        _______
+          ForkWriteS.
+
+     BCPL Fork Library         February 5, 1976          Page   8
+
+
+
+     JSYS Traps
+     ____ _____
+
+
+     AmTrapped()
+
+          Determines if the current fork has JSYS traps set on it
+          by  some  superior  fork.  Returns true if so, false if
+          not.
+
+
+     ResetTraps()
+
+          Removes JSYS traps from all inferior forks  and  clears
+          the JSYS trap PSI channel.
+
+
+     ReadTrapChannel()
+
+          Returns the current JSYS trap PSI channel.
+
+
+     SetForkError(fork,error)
+
+          Sets the most recent error condition encountered  by  a
+          fork  (via the SETER JSYS).  The fork is fork and error
+                                                   ____     _____
+          is the error number.
+
+
+     SetTrapChannel(chan)
+
+          Sets the JSYS trap PSI channel to chan.  If chan is  -1
+                                            ____      ____
+          then  traps  to this fork will bypass this fork without
+          cause a PSI or freeze of the trapped fork.
+
+
+     SetTraps(fork,jsary)
+
+          Sets JSYS traps for fork as specified by jsary.   jsary
+                              ____                 _____    _____
+          is  vector  where jsary|0 gives the number of jsyses to
+                            _____
+          be trapped and jsary|i (0<i<jsary|0+1) contains a  JSYS
+                         _____        _____
+          number.
+
+
+     RemoveTraps(fork,jsary) or RemoveTraps(fork)
+
+          Removes the traps set for fork as specified  by  jsary.
+                                    ____                   _____
+          jsary  is as described above, or is -1 which will cause
+          _____
+          all traps set for fork to be removed.  If jsary is  not
+                            ____                    _____
+          given then -1 is assumed.
+
+
+
+     BCPL Fork Library         February 5, 1976          Page   9
+
+
+
+     ReadTrappedFork()
+
+          Determines what JSYS in what fork trapped to this fork.
+          The value returned is fork,,JSYS#.
+
+
+     UnTrapFork(fork)
+
+          Untraps the trapped fork.   If  fork  is  not  trapped,
+                              ____        ____
+          nothing happens.
+
+
+     TrapJsyses(jsary) or
+     TrapJsyses(fork,jsary) or
+     TrapJsyses(fork,jsary,level) or
+     TrapJsyses(fork,jsary,level,chan)
+
+          TrapJsyses is a generalized routine  for  setting  JSYS
+          traps.   fork  is  the fork the traps are to be set on.
+                   ____
+          fork defaults to fhInferiors if it is not given.  jsary
+          ____                                              _____
+          is  a  vector  of  jsyses,  as described above, with an
+          addition; the left half of each entry contains  the  lv
+          of  a  function  name.   When  the  indicated  JSYS  is
+          trapped, the function will be called with the following
+          arguments:
+               (1) The trapped fork
+               (2) A vector of the trapped fork's ac's.
+               (3) The trapped fork's pc.
+               (4) The trapped fork's status word.
+               (5) The JSYS number that caused the trap.
+          level is the PSI level  at  which  JSYS  traps  are  to
+          _____
+          occur.   If level is not given, three is assumed.  chan
+                      _____                                  ____
+          is the JSYS trap PSI channel.  If chan  is  not  given,
+                                            ____
+          FreeTICh  is  called to find a free channel.  Note that
+          after calling TrapJsyses, the  user  must  still  do  a
+          PSIOn() himself.
+
+
+     ResumeTrappedFork(jtfork) or
+     ResumeTrappedFork(jtfork,jtfacs) or
+     ResumeTrappedFork(jtfork,jtfacs,jtfpc)
+
+          ResumeTrappedFork is a generalized routine for resuming
+          a  trapped  fork.   jtfork  is  the fork to be resumed.
+                              ______
+          jtfacs, if given and not -1, is a vector which is to be
+          ______
+          the  ac's  of  jtfork.   jtfpc is the location at which
+                         ______    _____
+          jtfork is to be resumed.  If jtfpc is  -1,  or  is  not
+          ______                       _____
+          given,  then  jtfork  will  simply be untrapped.  i.e.,
+                        ______
+          jtfork will execute the  trapped  JSYS  in  the  normal
+          ______
+          fashion.
+
+     BCPL Fork Library         February 5, 1976          Page  10
+
+
+
+     Creating Processes
+     ________ _________
+
+     The  fork  capabilities  of  TENEX  make  the  creation   of
+     processes  very  easy.   Processes  are  created  by  either
+     CreateProc or SubTask.  Each process shares all  of  storage
+     (except  for  the portion of the stack starting at the point
+     of the creation of the process thru the end  of  the  stack)
+     with  its  parent.   This  means that any change made by one
+     process, is seen by all of the others.  Since a  process  is
+     just  a fork, all the regular fork procedures may be used to
+     manipulate them.
+
+
+     CreateProc(fn,arg1,...,argn)
+
+          Create a process and starts running  the  procedure  fn
+                                                               __
+          with  the  arguments  arg1,...,argn.   The process will
+                                ____     ____
+          have the same capabilities as the parent  process,  but
+          they will not be enabled.  When fn returns, the process
+                                          __
+          is halted and my be checked for  by  WaitForFork.   The
+          value  of  CreateProc is the fork handle of the created
+          process.
+
+
+     SubTask(Fn) or
+     SubTask(Fn,Args) or
+     SubTask(Fn,Args,PFiles) or
+     SubTask(Fn,Args,PFiles,PossCaps) or
+     SubTask(Fn,Args,PFiles,PossCaps,EnbCaps)
+
+          SubTask is a more general version of CreateProc.  Fn is
+                                                            __
+          the procedure to be called when the process is started.
+          Args is either 0 (meaning no arguments) or a vector  of
+          ____
+          arguments  to  be given to Fn.  Args|0 is the number of
+                                     __   ____
+          arguments, and the rest of the vector is the  arguments
+          themselves.   If  Args  is  not  given,  0  is assumed.
+                            ____
+          PFiles  are  the  primary  I/O   jfns   in   the   form
+          ______
+          input,,output.   If  PFiles is -1, the primary I/O jfns
+                               ______
+          of the parent process are used.  PFiles defaults to -1.
+                                           ______
+          PossCaps  (defaults  to  -1)  is  the  initial possible
+          ________
+          capabilities of the process.  EnbCapS (defaults  to  0)
+                                        _______
+          is  the  initial  enabled  capabilities of the process.
+          The value of SubTask is the fork handle of the  created
+          process.
+
+
+     RestartProc(Fork,arg1,...argn)
+
+          Restarts a process (Fork) by running the procedure that
+                              ____
+          was  given  to CreateProc, or SubTask, with the new set
+          of arguments arg1,...,argn.  If Fork is still  running,
+                       ____     ____      ____
+          an  Illegal  Instruction  PSI will occur on the current
+          fork.
+
+     BCPL Fork Library         February 5, 1976          Page  11
+
+
+
+     RestartSubTask(Fork,Args) or RestartSubTask(Fork)
+
+          Similar to RestartProc except that  the  arguments  are
+          given by the optional array Args.  Args is as described
+                                      ____   ____
+          above in SubTask.
+
+     BCPL Fork Library         February 5, 1976          Page  12
+
+
+
+     Interprocess/Job Communication and Synchronization
+     ________________ _____________ ___ _______________
+
+     The following procedures use, as a means of interprocess/job
+     communication,  "signals".   Signals  are  identified  by  a
+     system-wide handle called a  Signal  ID  (SID).   SID's  are
+     released only by ReleaseSignal; a RESET will not release any
+     SID's.  One word  of  data  may  be  transferred  through  a
+     signal.
+
+     NOTE:  The  current  implementation  of  signals  is   still
+     experimental  in  TENEX  and  is  subject  to change without
+     notice.
+
+
+     CreateSignal(count) or CreateSignal(count,job1,...,jobN)
+
+          Assigns  a  SID  and  returns  it  as  the   value   of
+          CreateSignal.   count  is  the  initial  value  of  the
+                          _____
+          created signal.  If it is positive, it  represents  the
+          number  of WaitForSignal's which may be done before one
+          will hang if there are no intervening calls to  Signal.
+          If  count  is  zero  or  negative,  it  represents  the
+              _____
+          -count+1  number  of  calls  to  Signal  that  must  be
+           _____
+          executed  before  a  process waiting on the SID will be
+          continued.
+
+          If job1 is given  and  is  true,  then  the  signal  is
+             ____                    ____
+          available  to all jobs.  Otherwise, job1 - jobN (N must
+                                              ____   ____
+          be less than 9) are taken as the job numbers which  may
+          access  the  signal.  If no job numbers are given, then
+          the signal can only be accessed by  the  job  executing
+          the CreateSignal.
+
+
+     ReleaseSignal(sid) or ReleaseSignal()
+
+          sid is either a SID or -1, meaning all SID's.  The  sid
+          ___                                                 ___
+          is  released  and  all processes waiting in Signal's or
+          Waitforsignal's will cause an error.   If  sid  is  not
+                                                     ___
+          given, -1 is assumed.
+
+
+     WaitForSignal(sid)
+
+          Waits until the proper number  of  Signal's  have  been
+          done  on sid.  The value of WaitForSignal is either the
+                   ___
+          value given by the corresponding Signal, or zero if  no
+          value was given.
+
+     BCPL Fork Library         February 5, 1976          Page  13
+
+
+
+     Signal(sid) or
+     Signal(sid,value) or
+     Signal(sid,value,waitflag)
+
+          Generates a signal on  sid,  and  transmits  value  (if
+                                 ___                   _____
+          given)  to the process which performs the corresponding
+          WaitForSignal.  If waitflag is given and  is  non-zero,
+                             ________
+          the  process will wait until value has been transmitted
+                                       _____
+          to some process.
+
+          Note: Signal  with  a  value  supplied  waits  for  any
+                                 _____
+          previously  queued  data  by  the calling process to be
+          read by a WaitForSignal before acting  on  the  current
+          call.  This means that a process can only get one datum
+          ahead on SID's before hanging.
+
+     BCPL Fork Library         February 5, 1976          Page  14
+
+
+
+                                INDEX
+
+
+
+     AmTrapped  . . . . . . . . . . 8
+
+     CreateFork . . . . . . . . . . 1
+     CreateForkGroup  . . . . . . . 5
+     CreateProc . . . . . . . . . . 10
+     CreateSignal . . . . . . . . . 12
+
+     EnableForkCaps . . . . . . . . 3
+
+     ForkRead . . . . . . . . . . . 7
+     ForkReadS  . . . . . . . . . . 7
+     ForkStatus . . . . . . . . . . 2
+     ForkWrite  . . . . . . . . . . 7
+     ForkWriteS . . . . . . . . . . 7
+     FreezeFork . . . . . . . . . . 1
+
+     GetEntryVector . . . . . . . . 4
+     GetForkIO  . . . . . . . . . . 3
+     GetGroupInfo . . . . . . . . . 5
+     GetGroupTTY  . . . . . . . . . 5
+
+     HaltFork . . . . . . . . . . . 2
+
+     IsForkHalted . . . . . . . . . 2
+
+     KillFork . . . . . . . . . . . 1
+
+     LoadFork . . . . . . . . . . . 3
+
+     PMAP . . . . . . . . . . . . . 6
+
+     ReadForkACs  . . . . . . . . . 2
+     ReadForkCaps . . . . . . . . . 3
+     ReadPageAccess . . . . . . . . 6
+     ReadTrapChannel  . . . . . . . 8
+     ReadTrappedFork  . . . . . . . 9
+     ReleaseFork  . . . . . . . . . 2
+     ReleaseSignal  . . . . . . . . 12
+     RemoveTraps  . . . . . . . . . 8
+     ResetTraps . . . . . . . . . . 8
+     RestartProc  . . . . . . . . . 10
+     RestartSubTask . . . . . . . . 11
+     ResumeFork . . . . . . . . . . 2
+     ResumeTrappedFork  . . . . . . 9
+     RMAP . . . . . . . . . . . . . 6
+
+     SaveFork . . . . . . . . . . . 4
+     SetEntryVector . . . . . . . . 4
+     SetForkACs . . . . . . . . . . 2
+
+     BCPL Fork Library         February 5, 1976          Page  15
+
+
+
+     SetForkError . . . . . . . . . 8
+     SetForkIO  . . . . . . . . . . 3
+     SetGroupTTY  . . . . . . . . . 5
+     SetPageAccess  . . . . . . . . 7
+     SetTrapChannel . . . . . . . . 8
+     SetTraps . . . . . . . . . . . 8
+     Signal . . . . . . . . . . . . 13
+     SpliceFork . . . . . . . . . . 2
+     SSaveFork  . . . . . . . . . . 4
+     StartFork  . . . . . . . . . . 3
+     SubTask  . . . . . . . . . . . 10
+
+     TopOfGroup . . . . . . . . . . 5
+     TrapJsyses . . . . . . . . . . 9
+
+     UnTrapFork . . . . . . . . . . 9
+
+     WaitForFork  . . . . . . . . . 2
+     WaitForSignal  . . . . . . . . 12
+

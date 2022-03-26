@@ -1,0 +1,302 @@
+// NMAIN2.BCP  Routines used throughout the compiler.
+// This file also provides storage for static quantities used
+//-- throughout the compiler.
+
+// NextParam Return the next parameter number.
+// WriteChar Write a character as it might have been typed.
+// Plist  Print a piece of the AE-tree.
+// List1  Return an initialized node of length 1.
+// List2  ditto 2
+// List3, List4, List5, List6 ...
+// Wfline  Write a line of source code.
+// BCPLreport Error reporter for the compiler.
+
+get "<XBCPL>headbcpl"           // Compiler declarations.
+get "<bcpl>head"
+get "<bcpl>utilhead"
+
+// The file <XBCPL>TREE.BCP is also included in this compilation, in the routine
+//-- Plist.
+
+//Home base for the following global statics
+static                          // Variables used throughout the
+                                //-- compiler, and provided space here.
+{ SWbits :        nil           // Compiler option switches.
+  Reportcount :   0             // Count errors.
+  MONITOR :       nil           // Stream for compiler output messages.
+  GetnameV :      nil           // Names of files included in current
+                                //-- compilation.
+  GetnameP :      0             // Pointer through above.
+  ExtDecl :       nil           // Names declared as externals.
+  ExtDeclS :      0             // Counter through the above.
+  StaticN :       0             // Count static locations used, in
+                                //-- TRANS.
+  NextParameter : 0             // Next value returned by NextParam.
+  Ocode :         nil           // Stream to write ocode onto.
+  Curline :       nil           // Pointer to the current line.
+  Curfile :       nil           // The file currently being read -- the
+                                //-- index into GetnameV.
+  SWupper:        0
+  ConsoleStream : nil           // A stream to the console.
+  Warns :         0             // Count warning messages given.
+  Cautions :      0             // Count cautions given.
+
+ }
+
+let NextParam(Type) := valof
+{ NextParameter := NextParameter + #10
+  resultis NextParameter + (Type&7)
+ }
+
+and WriteChar(x) be             // Write the character x as it might be
+                                //-- typed.
+{ let y := selecton x into
+  { default:     x
+    case $*t:    $t             // tab
+    case $*n:    $n             // newline
+    case $*b:    $b             // backspace
+    case $*p:    $p             // new page (also, readin)
+    case $*d:    $d             // line feed down
+    case $*u:    $u             // line feed up
+    case $*$:    $$             // stop
+    case $*e:    $e             // end of stream
+   }
+  unless x eq y do Writech(OUTPUT, $**)
+  Writech(OUTPUT, y)
+ }
+
+and Plist(x, n, d) be           // Print node x at depth n to maximum
+                                //-- depth d.
+{ manifest
+  { MaxN  := 1023
+   }                            // Print all numbers greater than this
+                                //-- both decimal and octal.
+
+  static
+  { Line : -1                   // Pointer to the last line printed.
+    C :    nil                  // First character on line.
+   }
+
+  let SkipTo(n) be              // Skip over an indent for level n,
+                                //-- using tabs as appropriate.
+  { while n > 3 do { PBOUT(C); PBOUT($*t); C := $|; n := n - 4 }
+    PBOUT(C)
+    switchon n into
+    { case 3: WriteS(" . . . "); endcase
+
+      case 2: WriteS(" . . " ); endcase
+
+      case 1: WriteS(" . " ); endcase
+
+      case 0: WriteS(" " )
+     }
+   }
+
+  and Get(Node) :=              // Look up the type of a node.
+  selecton Node into
+  { default: -1 ,, "unknown operator "
+    case 0:  1 ,, "0"
+             get "<XBCPL>tree"  // The cases -- machine dependent.
+   }
+
+  C := lh x ne 0 => $>, $|      // If optimized start line with ">",
+                                //-- else "|"
+  x := rh x                     // The node.
+
+  if x eq 0 do { SkipTo(n); WriteS( "Nil" ); return }
+                                // Null sort of node.
+
+  if n > d do { SkipTo(n); WriteS("etc"); return }
+                                // Depth exceeded.
+
+  if x < 1000 do                // x is a tree item rather than a
+                                //-- pointer to one.
+  { SkipTo(n)
+    let Data := Get(x)
+    unless lh Data eq 16 do WriteS("illegal tree ")
+    WriteS(rh Data)
+    return
+   }
+
+  let Data := Get(H1|x)
+  if lh Data eq 11 do           // A LINE node.
+  { if Line ne H2|x \ SWbits << SW.Debug do
+    { Line := H2|x; Wfline(Line)
+     }
+    Plist(H3|x, n, d)
+    return
+   }
+
+  SkipTo(n)
+  switchon lh Data into
+  { case 12:                    // NUMBER
+      { WriteS("Number ")
+        let N := H2|x           // The value.
+        WriteN(N)               // Print it decimal.
+        if N > MaxN \ N < -MaxN do { WriteS("     "); WriteOct(N) }
+        return
+       }
+
+    case 13:                    // NAME
+      WriteS("Name "); WriteS(H2|x); return
+
+    case 14:                    // STRINGCONST
+      { let v := vec StringLength
+        WriteS("String *"")
+        Unpackstring(x+1, v); for k := 1 to v|0 do WriteChar(v|k)
+        PBOUT($*"); return
+       }
+
+    case 15:                    // Character constant.
+      WriteS("Charconst $"); WriteChar(H2|x); return
+
+    case 16:                    // Declarator for structures, such as
+                                //-- BIT.
+      WriteS("illegal tree "); WriteS(rh Data); return
+
+    case -1:                    // Unrecognized operator.
+      WriteS(rh Data); WriteOct(H1|x); return
+
+    default:                    // It"s a sort of ordinairy node.
+      WriteS(rh Data)
+      if SWbits << SW.Debug do { WriteS("   "); WriteOct(x) }
+      for k := 2 to lh Data do
+      { PBOUT($*n); Plist( H1|(x+k-1), n+1, d )
+       }
+   }
+ }
+
+and List1(a) := valof
+{ let V := Newvec(0)
+  V|0 := a
+  resultis V
+ }
+
+and List2(a, b) := valof
+{ let V := Newvec(1)
+  V|0, V|1 := a, b
+  resultis V
+ }
+
+and List3(a, b, c) := valof
+{ let V := Newvec(2)
+  V|0, V|1, V|2 := a, b, c
+  resultis V
+ }
+
+and List4(a, b, c, d) := valof
+{ let V := Newvec(3)
+  V|0, V|1, V|2, V|3 := a, b, c, d
+  resultis V
+ }
+
+and List5(a, b, c, d, e) := valof
+{ let V := Newvec(4)
+  V|0, V|1, V|2, V|3, V|4 := a, b, c, d, e
+  resultis V
+ }
+
+and List6(a, b, c, d, e, f) := valof
+{ let V := Newvec(5)
+  V|0, V|1, V|2, V|3, V|4, V|5 := a, b, c, d, e, f
+  resultis V
+ }
+// The format of the parameter n of Wfline is as follows...
+// 4.9 - 3.5   unused
+// 3.4 - 3.1   file number -- index into GetnameV for the file
+// rh: byte number
+// Unused fields must be zero.
+
+and Wfline(n,nl) be
+{ if NumbArgs()=1 do nl:=1
+  let t:=rh n
+  let v:=vec 20
+  let in:=FindInput(GetnameV|(lh n))
+  let lst:=0
+  { let v:=vec 20
+    v|1:=in
+    unless JSYS(#36,v)=2 do Help("SIZEF failed in Wfline*n")
+    lst:=v|2
+   }
+  { v|1:=in
+    v|3:=t
+    if t ge lst do
+    { WriteS("[[EOF]]")
+      break
+     }
+    JSYS(#54,v)                 // RIN
+    if (v|2=$*n)\(v|2=$*c) do
+    { nl:=nl-1
+      if nl=0 do break
+     }
+    Writech(v|2)
+    t:=t+1
+   }
+  repeat
+  Writech($*n)
+  EndRead(in)
+ }
+
+// BCPLreport is called with a parameter of the form   Type,,N   where
+//-- N is an error number and Type is
+// 6 A note to the user.
+// 4 A caution -- a possible error.
+// 2 A warning -- a probable error.
+// 0 An error.
+// -1 A compiler bug -- like 0 but produces more output.
+// -8 An error in a BCPL library routine. (N > 600).  These are fatal.
+// -9 Fatal error.  Do a JED 44 and then abort.
+// -10 Fatal error -- abort.
+// -12 Fatal error.  Call Help and then abort.
+
+and BCPLreport(Error, Ptr) be
+{ let Type, N := lh Error, rh Error
+                                // Error type, error number.
+  if N < 0 do Type, N := -1, 203
+                                // This should be removed sometime.
+  if N > 600 do Type := -8      // Error in the libraries.
+
+  if Type < -2 \ OUTPUT eq 0 do OUTPUT := ConsoleStream
+  if Type eq -12 do SWbits << SW.Help := true
+                                // Call Help before aborting.
+  let Data := selecton Type into
+  { case 6:  "NOTE" ,, 0
+    case 4:  "CAUTION" ,, lv Cautions
+    case 2:  "WARNING" ,, lv Warns
+    case 0:  "ERROR" ,, lv Reportcount
+    case -1: "COMPILER BUG" ,, lv Reportcount
+    default: "FATAL ERROR" ,, 0
+   }
+  PBOUT($*n)
+  unless N eq 0 do              // Print the error data.
+  { WriteS(lh Data); PBOUT($*s) // Tell him what happened.
+    if rh Data > 0 do rv rh Data := rv rh Data +1
+                                // Step the proper counter.
+    WriteN(N)
+    PBOUT($*n)
+    let BF := vec 100           // Room for error message if we get
+                                //-- fancy.
+    BF|0 := 0                   // We're not fancy
+    { let errs:=FindInput("<bcpl>errmsgs.bin",36)
+      sfptr(errs,N)
+      let p:=BIN(errs)
+      EndRead(errs)
+      if p=0 do goto l
+      errs:=FindInput("<bcpl>errmsgs.bin")
+      sfptr(errs,p)
+      let ch:=BIN(errs)
+      until ch=$% do
+      { BF|0:=BF|0+1
+        BF|(BF|0):=ch
+        ch:=BIN(errs)
+       }
+      EndRead(errs)
+     }
+
+  l:
+    for i:=1 to BF|0 do Writech(BF|i)
+    PBOUT($*n)
+   }
+  if SWbits << SW.Help do Help("Error report in BCPLreport")
+  if Type < -1 do Abort()
+ }

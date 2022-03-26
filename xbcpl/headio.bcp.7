@@ -1,0 +1,39 @@
+
+	// External declarations for BCPL routines to service
+	// priority interrupts
+
+external {
+	ADRPI ; INSPI ; BPTPI ; IOTPI ; PWRPI
+	EMTPI ; TRPPI ; TCIPI
+	TCOPI ; LPTPI ; CLKPI ; IMPIPI
+	IMPOPI; RSTIO
+	}
+
+// Stream vector declarations
+
+external
+{ LPT
+  TTY
+  NIL
+}
+
+// Offsets into stream vectors
+
+manifest
+{ INIT:   0
+  INCH:   2
+  OUTCH:  4
+  INCOUNT:6
+  OUTCOUNT:
+          8
+  INCLEAR:10
+  OUTCLEAR:
+          12
+CLOSEI:   14
+CLOSEO:   16
+}
+structure
+{ buf
+	{ Byte ^0^127  byte
+	}
+}

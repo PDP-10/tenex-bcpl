@@ -1,0 +1,120 @@
+
+// IO utiities
+
+get "HEAD.BCP"
+get "HEADIO.BCP"
+::reserve numbargs
+
+structure
+{ STRING
+  { N byte
+    C^255 byte
+  }
+}
+
+manifest
+{           EOF    : #377	// End of stream character
+          }
+static {   INPUT  _ nil		// Default input stream
+           OUTPUT _ nil		// Default output stream
+	}
+
+let RSTIO() be
+{ (rv TTY|INIT)()
+  (rv LPT|INIT)()
+}
+
+ let Readch(Stream, lvCh) _ valof
+{ let Dummy _ nil
+  switchon numbargs into
+  { case 0: Stream _ lv Dummy
+    case 1: lvCh _ Stream
+            Stream _ INPUT
+   }
+  rv lvCh _ BIN(Stream)
+  resultis rv lvCh
+ }
+
+and BIN(Stream) _ valof
+{ if numbargs < 1 then Stream _ INPUT
+  resultis (rv Stream|INCH)()
+ }
+
+and PBIN() _ BIN(INPUT)
+
+and Writech(Stream, Ch) _ valof
+{ if numbargs < 2 then { Ch _ Stream; Stream _ OUTPUT}
+  resultis (rv Stream|OUTCH)(Ch)
+ }
+
+and BOUT(Stream, Ch) _ Writech(Stream, Ch)
+
+and PBOUT(Ch) _ Writech(OUTPUT, Ch)
+
+and WriteS(Stream, String) be
+{ if numbargs < 2 then { String _ Stream; Stream _ OUTPUT}
+  for i _ 1 to String >> STRING.N
+  do Writech(Stream, String >> STRING.C^i)
+ }
+
+and WriteN(Stream, Number) be
+{ if numbargs < 2 then { Number _ Stream; Stream _ OUTPUT}
+  WriteNumber(Stream, Number, 10, 0)
+ }
+
+and WriteOct(Stream, Number) be
+{ if numbargs < 2 then { Number _ Stream; Stream _ OUTPUT}
+  WriteNumber(Stream, Number, 8, 0)
+ }
+
+and WriteNumber(Stream, Number, Radix, Width) be
+{ switchon numbargs into
+  { case 1: Radix _ 0
+    case 2: Number _ 10
+    case 3: Width _ Radix
+            Radix _ Number
+            Number _ Stream
+            Stream _ OUTPUT
+   }
+  let Digit _ Number rem Radix
+  and Quotient _ Number/Radix
+  if Quotient ne 0 \ Width > 1
+  then WriteNumber(Stream, Quotient, Radix, Width-1)
+  Writech(Stream, Digit+$0)
+ }
+
+and Cfibf(Stream) be (rv (numbargs > 0 => Stream, INPUT)|INCLEAR)()
+
+and Cfobf(Stream) be (rv (numbargs > 0 => Stream, OUTPUT)|OUTCLEAR)()
+
+and AnyInput(Stream) _ valof
+{ if numbargs < 1 then Stream _ INPUT
+  resultis (rv Stream|INCOUNT)() ne 0
+ }
+
+and Dobe(Stream) be
+{   if numbargs < 1 do Stream _ OUTPUT
+  while (rv Stream|OUTCOUNT)() > 0 do { }
+ }
+
+and CreateOutput(n) _ valof
+{ if n = 0 then resultis TTY
+  if EqString(n, "LPT") then resultis LPT
+  if EqString(n, "TTY") then resultis TTY
+  resultis NIL
+}
+
+and EqString(s1, s2) _ valof
+{ for i _ 0 to s1 >> STRING.N
+  do if s1 >> STRING.C^i ne s2 >> STRING.C^i then resultis false
+  resultis true
+}
+
+and FindInput(n) _ TTY  // Only input device for now
+
+and EndWrite(Stream) be
+{  (rv Stream|CLOSEO) ()
+}
+
+and EndRead(Stream) be { (rv Stream|CLOSEI) () }
+

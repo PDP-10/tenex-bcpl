@@ -1,0 +1,55 @@
+
+// mkcpdc.bcp
+// Make the initial compiler hash-coded dictionary
+//  from a file of the form:
+//	// ....... 
+//	#xxxxxx word
+//	#xxxxxx word
+//	.
+//	.
+//	.
+//	-1
+// Rovner, 2/11/73
+
+get "<BCPL>dicthead"
+get "<BCPL>head"
+get "<BCPL>utilhead"
+static{ fptr_1}
+
+manifest{ Offset_#260000	// start of dictionary in compiler's world
+ }
+
+
+let Start() be
+ { OUTPUT_CreateOutput(0)
+   INPUT_FindInput(1)
+   let ch_nil
+   let ds_InitDict(#400,Offset)
+   { ch_PBIN()} repeatuntil ch=$/
+   { ch_PBIN()} repeatuntil ch=$*n \ ch=$*c \ ch=$*l
+   { let val_ReadN()
+     let ptr_nil
+     let wrd_vec 20
+     if val=-1 do break
+     if EofFlg do Help(2)
+     ReadWord(wrd)
+     if Enter(wrd,lv ptr,1) do Help(1)
+     unless Enter(wrd,lv ptr,1) do Help(3)
+     ptr|Offset_val
+   } repeat
+   Offset|0_fptr
+   WriteS("Dictionary start:*s") ; WriteOct(Offset) ; PBOUT($*n)
+   WriteS("Last address used: ")
+   WriteOct(fptr-1+Offset) ; PBOUT($*n)
+ }
+
+and DictGetFree(n)_valof
+ { let r_fptr
+   fptr_fptr+n
+   resultis r
+ }
+
+
+and DictRetFree() be
+{ Help("Awful*n")
+}

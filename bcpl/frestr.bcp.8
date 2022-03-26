@@ -1,0 +1,252 @@
+
+// <BCPL>FRESTR.BCP;2    11-JUN-73 14:54:12 EDIT BY JMILLER
+// Changed GetfsPages to GetStorageSpace, fixed Help call
+
+// freestore.b... stolen from LL by Rovner 2/1/73
+//
+// free block structure
+// 0 : ,,next block in list
+// 1 : ,,# regs asked for (AAAAn regs - 1)(incl. header)
+// 2 : ,,last loc in block + 1 (start of next block)
+//
+// etc.
+
+//
+// structure of block in use
+// -1: hash,,AAAAn regs asked for
+// 0 : start of storage available to user
+//
+// etc.
+
+get "<bcpl>head"
+get "<bcpl>freestorehead"
+
+manifest
+{ nfixed _ 40
+ }
+static
+{                               // memory of free block lists
+  oddblocks : 0                 // blocks of lth > nfixed
+  blocks :    table
+              0,0,0,0,0,0,0,0,0,0,
+                                // nfixed locs
+              0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+              0,0, 0,0,0        // and a little extra for slop
+
+  ncarved:    0                 // total number of blocks carved
+  bulkstart:  0                 // bulk free file pointers
+  bulkend:    0                 // empty when start _ end
+  rand:       0                 // false ... boolean _> might be able
+                                //-- to merge blocks
+
+ }
+let rptcarved()_ncarved+0
+
+let grh(x)_x&#777777            // rh x
+and glh(x)_(x rshift 18)&#777777
+                                // lh x
+
+// user callable routines
+
+and RetBlock(block) be
+{ let b _ block-1
+  let n,bh_grh(b|0),glh(b|0)
+  let h_hash(b,n)
+
+  if n<2 \ n>#377777 do fserror("freestore: block size clobbered",300)
+
+  if h ne bh do fserror("freestore: hash clobbered",301)
+                                // hash got clobbered
+
+  rand_true                     // might be able to merge blocks
+
+  b|0,b|1,b|2 _ 0,n,b+n+1
+
+  retb(b)
+ }
+
+and hash(loc,n)_valof
+{ let k_(loc neqv #525252)*(n neqv #1234)
+  resultis grh(k+glh(k))
+ }
+
+and GetBlock(n)_valof
+{gb
+  n_(n eq 1=>2,n)
+  if n<2 do fserror("freestore: no more storage space",302)
+  let b_getb(n)
+  b|0,b|1 _ hash(b,n),,n,0
+  resultis b+1
+ }gb
+
+and retb(block) be
+{ let n_block|1
+  test n>nfixed
+  then oddblocks_sput(block,oddblocks)
+  or
+  {1
+    let l_blocks+n
+    block|0_l|0
+    l|0_block
+   }1
+ }
+
+and getb(n) _ valof
+{g
+  if n>nfixed resultis gcarve(n)
+  let l_blocks+n
+  let b_ l|0
+
+  if b eq 0 resultis gcarve(n)
+  l|0 _ b|0
+  resultis b
+ }g
+
+and gcarve(n) _ valof
+{gc                             // carve a block of the proper length
+
+// out of another on the oddblocks list
+// if there is one big enough
+
+  if oddblocks eq 0 resultis bulkcarve(n)
+  let nmin_n+5
+  and prvblk,curblk _ lv oddblocks,oddblocks
+
+  {1
+    let m_curblk|1
+    if m eq n do
+    {2                          // return this entire block
+      prvblk|0_curblk|0
+      resultis curblk
+     }2
+
+    if m > nmin do
+    {2                          // split curblk into two pieces
+      prvblk|0 _ curblk|0       // remove curblk
+      resultis csplit(curblk,m,n)
+     }2
+
+// block not big enough ... go on to the next block
+
+    prvblk_curblk
+    curblk_curblk|0
+   }1
+  repeatwhile curblk>0
+
+// no block found big enough
+
+  resultis bulkcarve(n)
+ }gc
+
+and bulkcarve(n) _ valof
+{bc
+  let l_bulkend-bulkstart       // length of the bulk free storage
+  if l eq n do
+  { let b_bulkstart
+    bulkstart,bulkend_0,0
+    ncarved_ncarved+n+1
+    resultis b
+   }
+
+  if l > n+5 do
+  { let b _ bulkstart
+    bulkstart_bulkstart+n+1
+    ncarved_ncarved+n+1
+    resultis b
+   }
+
+// not enough bulk storage
+// return whatever is left and
+// try again with either garbage collection or
+// a new book of storage
+
+  unless l eq 0 do
+  {                             // return the remainder
+    bulkstart|1_l
+    bulkstart|2_bulkend+1
+    retb(bulkstart)
+    ncarved_ncarved+l+1
+    bulkstart,bulkend_0,0
+   }
+
+  if rand then
+  { gcollect()
+    resultis getb(n)
+   }
+
+// cannot merge free blocks --- get a new book
+
+  bulkstart_GetStorageSpace(#20)
+  bulkend_bulkstart+#17777
+
+  resultis bulkcarve(n)
+ }bc
+
+and gcollect() be
+{ let mfl_oddblocks
+  oddblocks_0
+  for i_0 to (nfixed+1) do
+  { mfl_lcopy(blocks|i,mfl)
+    blocks|i_0
+   }
+
+  retlist(mfl)
+  rand_false
+ }
+
+and lcopy(ilist,olist) _ valof
+{l
+  while ilist ne 0 do
+  { let b_ilist
+    ilist_b|0
+    olist_sput(b,olist)
+   }
+  resultis olist
+ }l
+
+and sput(block,lsst)_valof
+{sp
+  if lsst eq 0 do
+  { block|0_0
+    resultis block
+   }
+
+  if block <lsst do
+  {1
+    test block|2 eq lsst
+    then block|0,block|2,block|1_lsst|0,lsst|2,((lsst|2)-1)-block
+    or block|0 _ lsst
+    resultis block
+   }1
+
+  let nl_sput(block,lsst|0)
+  test lsst|2 eq nl
+  then lsst|0,lsst|2,lsst|1_nl|0,nl|2,((nl|2)-1)-lsst
+  or lsst|0_nl
+  resultis lsst
+ }sp
+
+and retlist(l) be
+{r
+  while l ne 0 do
+  { let nl_l|0
+    retb(l)
+    l_nl
+   }
+ }r
+
+and csplit(blk,blth,need)_valof
+{ let nblk_blk+need+1
+  nblk|1_blth-(need+1)
+  nblk|2_blk|2
+  retb(nblk)
+  resultis blk
+ }
+
+and fserror(string,n) be Help(string)
+
+and ResetFreeStore() be
+{ oddblocks _ 0
+  for i _ 0 to 42 do blocks|i _ 0
+  ncarved, bulkstart, bulkend, rand _ 0, 0, 0, 0
+ }

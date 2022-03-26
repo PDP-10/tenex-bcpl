@@ -1,0 +1,684 @@
+
+// BCPL Compiler -- Part 6 of Trans.
+
+// Lookat  Attempt to evaluate a piece of tree at compile time.
+// *TraceTable Apply a table to a constant subscript, at compile time.
+// *EvalBinop Evaluate a binary operator, at compile time.
+// *EvalUnop Evaluate a unary operator, at compile time.
+// *SingleBit Does operand have only one non-zero bit, and if so,
+//-- which one?
+// *EvalQN  Do a structured access of a constant.
+// *EvalStringAp Apply a string to a constant.
+// EvalConst Evaluate a constant expression.
+// * local to this compilation.
+
+get "<XBCPL>headtrn"            // Declarations for TRANS.
+
+static
+{ Constant : false,,false
+ }                              // Set to true when called from
+                                //-- EvalConst, and false otherwise.
+
+// Lookat is applied to the address of a tree node (i.e., with
+//-- Lookat(H2+x)   ).
+// Let LVX be Lookat"s argument, and let  x _ rv LVX .  There are three
+//-- cases...
+// 1. The node can be evaluated at compile time.  Then replace  rv LVX
+//-- by  (LOC ,, NODE)  where
+// LOC  is the address of a word containing the computed value, and
+//-- NODE  is a usual tree node.
+// 2. The node can be simplified, as for a  COND  with constant
+//-- condition or a table subscripted
+// by a constant.  Then replace  rv LVX  by the simpler node and recur.
+//--  For convenience in
+// debugging, set  lh rv LVX  to  -1  to indicate that a change has
+//-- been made.
+// 3. No simplification is possible.  Lookat has been applied
+//-- recursively to all sons of
+// the node that might be part of an expression.
+
+let Lookat(LVX) be
+{ let x := rv LVX               // The usual sort of node.
+  if x eq 0 return              // Nothing to do.
+  if lh x ne 0 return           // We have been here already.
+
+  let Value := nil              // Put a computed value here if we get
+                                //-- one.
+  and Node := 0                 // Put a new node here if we get one.
+  and Op := H1|x
+
+  switchon Op into
+  {                             // The following nodes already have a
+                                //-- value, in the second word of the
+                                //-- node.
+    case NUMBER:
+    case CHARCONST:
+    case TRUE:
+    case FALSE:
+    case NIL: lh rv LVX := H2+x // The address of the relevant value.
+              return
+
+// The following are the infix binary operators.
+
+    case PLUS:
+    case MINUS:
+    case MULT:
+    case EQ:
+    case NE:
+    case GR:
+    case LS:
+    case GE:
+    case LE:
+    case LSHIFT:
+    case RSHIFT:
+    case LSCALE:
+    case RSCALE:
+    case LOGAND:
+    case LOGOR:
+    case EQV:
+    case NEQV:
+    case EQUIV:
+    case NEQUIV:
+    case DIV:
+    case REM:
+    case COMCOM:
+    case FPLUS:
+    case FMINUS:
+    case FMULT:
+    case FDIV:
+    case FLS:
+    case FEQ:
+    case FGR:
+              { Lookat(H2+x); Lookat(H3+x)
+                                // Look at the two sons.
+                let L, R := lh H2|x, lh H3|x
+                                // The addresses of the simplified
+                                //-- values.
+                if (L&#400000) ne 0 do L:=L\#777777000000
+                if (R&#400000) ne 0 do R:=R\#777777000000
+                unless L > 0 \ R > 0 return
+                                // Return if neither was evaluated.
+                if L > 0 & R > 0 & Op ne DIV & Op ne FDIV &
+                   Op ne FPLUS & Op ne FMINUS & Op ne FMULT &
+                   Op ne FGR & Op ne FEQ & Op ne FLS
+                do              // Both were evaluated.
+                { Value := EvalBinop(Op, rv L, rv R)
+                                // Compute the value.
+                  endcase
+                 }
+                let LC, RC := L > 0, R > 0
+                                // Switches for L and R being constant.
+                and LX, RX := nil, nil
+                                // For the values.
+                and LAAAA0, LAAAA1, LT, LF, RAAAA0, RAAAA1, RT, RF :=
+                  false repname 8
+                                // Switches for zero, one, true, false.
+                if LC do        // Left operand has been evaluated.
+                { LX := rv L    // Value of the operand.
+                  if LX eq 0 do LAAAA0 := true
+                                // LAAAA0 is true if LX is +0 or -0
+                  if LX eq 1 do LAAAA1 := true
+                                // LX is 1
+                  if LX = true do LT := true
+                                  // LX is true
+                  if LX = false do LF := true
+                                   // LX is false
+                 }
+                if RC do        // Right operand has been evaluated.
+                { RX := rv R    // The value of the operand.
+                  if RX eq 0 do RAAAA0 := true
+                                // RAAAA0 is true if RX is +0 or -0
+                  if RX eq 1 do RAAAA1 := true
+                  if RX = true do RT := true
+                  if RX = false do RF := true
+                 }
+
+                switchon Op into
+                { case PLUS:
+                    if LAAAA0 do { Node := H3|x; endcase }
+                                // 0+x => x
+                    if RAAAA0 do { Node := H2|x; endcase }
+                                // x+0 => x
+                    return
+
+                  case MINUS:
+                    if LAAAA0 do { Node := List2(NEG, H3|x); endcase }
+                                // 0-x => neg x
+                    if RAAAA0 do { Node := H2|x; endcase }
+                                // x-0 => x
+                    return
+
+                  case MULT:
+                    { if LAAAA0 \ RAAAA0 do { Value := 0; endcase }
+                                // 0*x => 0,. x*0 => 0
+                      if LAAAA1 do { Node := H3|x; endcase }
+                                // 1*x => x
+                      if RAAAA1 do { Node := H2|x; endcase }
+                                // x*1 => x
+                      let n := SingleBit(LC => LX, RX)
+                                // Is evaluated operand 2n?
+                      if n < 0 return
+                                // No.  Sigh.
+                      Node :=
+                        List3(LSCALE, (LC => H3, H2)|x,
+                              List2(NUMBER, n))
+                                // x*2n => x lscale n
+                      endcase
+                     }
+
+                  case DIV:
+                    { if RAAAA0 do
+                      { TransReport(2,,133, x, 0); return
+                       }        // x/0 => warning
+                      if LC & RC do { Value := LX/RX; endcase }
+                                // Both evaluated.
+                      if RAAAA1 do { Node := H2|x; endcase }
+                                // x/1 => x
+                      if LAAAA0 do { Value := 0; endcase }
+                                // 0/x => 0
+                      unless RC return
+                      let n := SingleBit(RX)
+                                // Is denominator 2n?
+                      if n < 0 return
+                                // No.
+                      Node := List3(RSCALE, H2|x, List2(NUMBER, n))
+                                // x/2n => x rscale n
+                      endcase
+                     }
+
+                  case LOGAND:
+                    if LF \ RF do { Value := false; endcase }
+                                // false&x => false,. x&false => false
+                    if LT do { Node := H3|x; endcase }
+                                // true&x => x
+                    if RT do { Node := H2|x; endcase }
+                                // x&true => x
+                    return
+
+                  case LOGOR:
+                    if LT \ RT do { Value := true; endcase }
+                                // true\x => true   x\true => true
+                    if LF do { Node := H3|x; endcase }
+                                // false\x => x
+                    if RF do { Node := H2|x; endcase }
+                                // x\false => x
+                    return
+
+                  case LSCALE:
+                  case RSCALE:
+                    if LAAAA0 do { Value := LX; endcase }
+                                // XXXX_+0 scale x => XXXX_+0
+                  case LSHIFT:
+                  case RSHIFT:
+                    if LF do { Value := 0; endcase }
+                                // +0 shift x => +0
+                    if RAAAA0 do { Node := H2|x; endcase }
+                                // x shift 0 => x
+                    return
+
+                  case EQV:
+                    if LF do { Node := List2(NOT, H3|x); endcase }
+                                // false eqv x => ~x
+                    if RF do { Node := List2(NOT, H2|x); endcase }
+                                // x eqv false => ~x
+                    if LT do { Node := H3|x; endcase }
+                                // true eqv x => x
+                    if RT do { Node := H2|x; endcase }
+                                // x eqv true => x
+                    return
+
+                  case NEQV:
+                    if LF do { Node := H3|x; endcase }
+                                // false neqv x => x
+                    if RF do { Node := H2|x; endcase }
+                                // x neqv false => x
+                    if LT do { Node := List2(NOT, H3|x); endcase }
+                                // true neqv x => ~x
+                    if RT do { Node := List2(NOT, H2|x); endcase }
+                                // x neqv true => ~x
+                    return
+
+                  case COMCOM:
+                    if LF do { Node := List2(RHZ, H3|x); endcase }
+                                // false ,, x => rhz x
+                    return
+
+// case FPLUS: case FMINUS: case FMULT: case FDIV: case FLS: case FGR:
+// {  LAAAA0, LAAAA1, RAAAA0, RAAAA1 _ false, false, false, false
+// if LC do LAAAA0, LAAAA1 _ LX AAAAo_ 0.0, LX AAAAo_ 1.0
+// if RC do RAAAA0, RAAAA1 _ RX AAAAo_ 0.0, RX AAAAo_ 1.0
+// switchon Op into
+// {  case FPLUS:
+// if LAAAA0 do { Node _ H3|x; endcase }   //  0.0 AAAAo+ x => x
+// if RAAAA0 do { Node _ H2|x; endcase }   //  x AAAAo+ 0.0 => x
+// return
+//
+// case FMINUS:
+// if LAAAA0 do { Node _ List2(FNEG, H3|x); endcase }   //  0.0 AAAAo-
+                    //-- x => AAAAo- x
+// if RAAAA0 do { Node _ H2|x; endcase }   //  x AAAAo- 0.0 => x
+// return
+//
+// case FMULT:
+// if LAAAA0 \ RAAAA0 do { Value _ 0.0; endcase }   //  0.0 AAAAo* x =>
+                    //-- 0.0
+// if LAAAA1 do { Node _ H3|x; endcase }   //  1.0 AAAAo* x => x
+// if RAAAA1 do { Node _ H2|x; endcase }   //  x AAAAo* 1.0 => x
+// return
+//
+// case FDIV:
+// if RAAAA0 do TransReport(2,,133, x, 0)   //  x AAAAo/ 0.0 => warning
+// /        if LC & RC do { Value _ LX AAAAo/ RX; endcase }   //  Both
+                    //-- evaluated.
+// if LAAAA0 do { Value _ 0.0; endcase }   //  0.0 AAAAo/ x => 0.0
+// if RAAAA1 do { Node _ H2|x; endcase }   //  x AAAAo/ 1.0 => x
+// return
+//
+// case FLS:   //  x AAAAo< 0.0  =>  x < 0
+// if RAAAA0 do { Node _ List3(LS, H2|x, ZERONODE); endcase }
+// return
+//
+// case FGR:   //  0.0 AAAAo> x  =>  0 > x
+// if LAAAA0 do { Node _ List3(GR, ZERONODE, H3|x); endcase }
+// return
+// }
+// endcase
+// }
+
+                  default:
+                    return
+                 }
+                endcase         // Take all above "endcase"s to the end
+
+                                //-- of this function.
+               }
+
+    case NEG:
+    case NOT:
+    case RHZ:
+    case LHZ:
+    case Q1Z:
+    case Q2Z:
+    case Q3Z:
+    case Q4Z:
+    case RH:
+    case LH:
+    case Q1:
+    case Q2:
+    case Q3:
+    case Q4:                    // case FNEG:
+
+              { Lookat(H2+x)    // Examine the son.
+                let L := lh H2|x
+                if (L&#400000) ne 0 do L:=L\#777777000000
+                unless L > 0 return
+                                // Done if not evaluated.
+                Value := EvalUnop(Op, rv L)
+                endcase
+               }
+
+    case NAME:
+              { let t := CellWithName(x)
+                if lh Dvec|t eq NUMBER do
+                { Value := Dvec|(t+1); endcase
+                 }              // Manifest constant name.
+//***YUK
+                unless (rh Constant)=-1 return
+                                // All done, unless called from
+                                //-- EvalConst.
+                TransReport(119, 0, H2|x, 0)
+                                // Complain.
+                static
+                { Value : 0
+                 }              // Each value defined this way is
+                                //-- different, for case constants.
+                AddName(x, NUMBER, Value); DvecE := DvecS
+                                // Declare it constant to avoid more
+                                //-- messages.
+                Value := Value + 1
+                                // Get a new value next time.
+                lh Constant := false
+                return
+               }
+
+    case COND:
+              { Lookat(H2+x)    // Examine the conditional arm.
+                let B := lh H2|x
+                if (B&#400000) ne 0 do B:=B\#777777000000
+                unless B > 0 do { Lookat(H3+x); Lookat(H4+x); return }
+                Node := (rv B => H3, H4)|x
+                                // The selected arm.
+                Lookat(lv Node)
+                endcase
+               }
+
+    case VECAP:
+              { Lookat(H2+x); Lookat(H3+x)
+                                // Optimize the two sons.
+                let A, B := H2|x, H3|x
+                                // The two sons.
+                if #400000 > lh A > 0 do
+                { let t := A; A := B; B := t
+                 }              // If either is constant it is B.
+                unless #400000 > lh B > 0 return
+                                // No hope if neither is a constant.
+                B := rv lh B    // The value.
+                let AR := rh A  // The tree node that is A.
+                if H1|AR eq STRINGCONST do
+                { Value := EvalStringAp(AR+1, B); endcase
+                 }              // "xxxx"|n
+                if H1|AR eq TABLE do
+                { Node := TraceTable(H2|AR, B); endcase
+                 }              // (table ...)|n
+                if #400000 > lh A > 0 do
+                { Node := List2(RV, List2(NUMBER, B + rv lh A)); endcase
+                 }              // m|n => rv(m+n)
+                if B eq 0 do { Node := List2(RV, A); endcase }
+                                // x|0 => rv x
+                return
+               }
+
+    case LV:
+              { let y := H2|x
+                if lh y ne 0 return
+                if H1|y eq VECAP do
+                { Node := List3(PLUS, H2|y, H3|y); Lookat(lv y); endcase
+                 }              // lv(x|y) => x+y
+                Lookat(H2+x)
+                return
+               }
+
+    case RV:
+              { let y := H2|x
+                if lh y ne 0 return
+                if H1|y eq LV do
+                { Node := H2|y; Lookat(lv Node); endcase
+                 }              // rv lv x => x
+                if H1|y eq STRINGCONST do
+                { Value := EvalStringAp(y+1, 0); endcase
+                 }              // rv "xyz" => "xyz"|0
+                if H1|y eq TABLE do
+                { Node := TraceTable(H2|y, 0); Lookat(lv Node); endcase
+                 }
+                Lookat(H2+x)
+                return
+               }
+
+    case CSIZE:
+              Value:=EvalSize(H2|x)/WordSizeOb+1 ; endcase
+
+    case SIZE:
+              Value := EvalSize(H2|x); endcase
+
+    case OFFSET:
+              { let V := DoQualName(H2|x, true, nil, true)
+                                // Process offset.  Wide OK, no load.
+                unless V << QN.M eq 0 return
+                                // Not a constant if something needed
+                                //-- to be loaded.
+                Value := V << QN.N; endcase
+
+                                // Constant offset.
+               }
+
+    case LEFTLUMP:              // X << QN
+              { Lookat(H2+x)    // Look at X.
+                unless #400000 > lh H2|x > 0 return
+                                // It"s not a constant.
+                let V := DoQualName(H3|x, false, nil, true)
+                                // Process QN.  No load.
+                unless V << QN.M eq 0 return
+                                // The offset is not a constant.
+                Value := EvalQN(rv lh H2|x, V)
+                                // Extract the desired value.
+                endcase
+               }
+
+    case RIGHTLUMP:             // X >> QN.  Is X a table or a
+                                //-- stringconstant?
+              { Lookat(H2+x)    // Examine X.
+                let Z := rh H2|x
+                unless H1|Z eq TABLE \ H1|Z eq STRINGCONST return
+                                // No hope except for these cases.
+                let V := DoQualName(H3|x, false, nil, true)
+                                // Process QN, with no load.
+                unless V << QN.M eq 0 return
+                                // Offset is not a constant.
+                let N := V << QN.N
+                                // The offset.
+                V << QN.N := N rem WordSizeOb
+                                // The offset in the word in question.
+                N := N / WordSizeOb
+                                // The number of words of offset.
+                let A :=
+                  H1|Z eq TABLE => TraceTable(H2|Z, N),
+                  EvalStringAp(Z+1, N)
+                                // The word in question.
+                Value := EvalQN(A, V)
+                                // Find the desired part of the word.
+                endcase
+               }
+
+    case FNAP:
+    case COMMA:
+    case REPNAME:
+    case REPVAL:
+              Lookat(H3+x)
+
+    case TABLE:
+    case LIST:
+    case VEC: Lookat(H2+x)
+
+    case VALOF:
+    case ASCIZCONST:
+    case STRINGCONST:
+    case NUMBARGS:
+    case LEFTSIDE:
+    case ERROR:
+              return
+
+    case LINE:
+              Lookat(H3+x); return
+
+    default:  TransReport(147, x, " in Lookat", 0)
+              return
+   }
+
+// Come here for all the above ""endcase""s.
+
+  if Node ne 0 do
+  { if lh Node eq 0 do lh Node := -1
+    rv LVX := Node
+    return
+   }
+  Node := Value = 0 => ZERONODE, List2(NUMBER, Value)
+  rv LVX := H2+Node ,, Node
+ }
+
+// TraceTable is applied to a table and a subscript.  It returns the
+//-- relevant element of the table.
+
+and TraceTable(X, N) := valof
+{ static
+  { n : nil
+   }                            // A static location to hold N.
+
+  let F(x) := valof
+  { while H1|x eq COMMA do
+    { let y := F(H2|x)
+      if n < 0 resultis y
+      x := H3|x
+     }
+    if H1|x eq REPNAME do
+    { 
+let m_EvalConst(H3+x)
+unless 1 le m le 2000 do { TransReport(37,x,0) ; m_1}
+for k := 1 to m do
+      { let y := F(H2|x)
+        if n < 0 resultis y
+       }
+      resultis 0                // Went too far.
+     }
+    n := n - 1
+    resultis x
+   }
+
+  n := N
+  resultis F(X)
+ }
+
+and EvalBinop(Op, a, b) := valof
+switchon Op into
+{ case PLUS:   resultis a + b
+
+  case MINUS:  resultis a - b
+
+  case EQ:     resultis a eq b
+
+  case NE:     resultis a ne b
+
+  case LS:     resultis a < b
+
+  case GR:     resultis a > b
+
+  case LE:     resultis a le b
+
+  case GE:     resultis a ge b
+
+  case MULT:   resultis a * b
+
+  case DIV:    resultis a / b
+
+  case REM:    resultis a rem b
+
+  case FPLUS:  resultis a %+ b
+
+  case FMINUS: resultis a %- b
+
+  case FMULT:  resultis a %* b
+
+  case FDIV:   resultis a %/ b
+
+// case FGR: resultis a %> b
+// case FEQ: resultis a %= b
+// case FLS: resultis a %< b
+
+  case COMCOM: resultis a ,, b
+
+  case LSHIFT: resultis a lshift b
+
+  case RSHIFT: resultis a rshift b
+  case LSCALE: resultis a > 0 => a lshift b, -(-a lshift b)
+
+                                // TO BE FIXED LATER
+  case RSCALE: resultis a > 0 => a rshift b, -(-a rshift b)
+
+                                // TO BE FIXED LATER
+  case LOGAND: resultis a & b
+
+  case LOGOR:  resultis a \ b
+
+  case EQV:    resultis a eqv b
+
+  case NEQV:   resultis a neqv b
+
+  case EQUIV:  resultis a = b
+
+  case NEQUIV: resultis a ne b
+  default:     TransReport(-1,,203, 0, 0); resultis 0
+
+                                // Compiler bug.
+ }
+
+and EvalUnop(Op, a) := valof
+switchon Op into
+{ case NEG: resultis - a
+
+  case NOT: resultis ~ a        // case FNEG: resultis %- a
+
+  case LH:  resultis lh a
+
+  case RH:  resultis rh a
+
+  case Q1:  resultis q1 a
+
+  case Q2:  resultis q2 a
+
+  case Q3:  resultis q3 a
+
+  case Q4:  resultis q4 a
+
+  case LHZ: resultis #777777 & lh a
+
+  case RHZ: resultis #777777 & rh a
+
+  case Q1Z: resultis #777 & q1 a
+
+  case Q2Z: resultis #777 & q2 a
+
+  case Q3Z: resultis #777 & q3 a
+
+  case Q4Z: resultis #777 & q4 a
+  default:  TransReport(-1,,203, 0, 0); resultis 0
+
+                                // Compiler bug.
+ }
+
+and SingleBit(x) := valof       // If x eq 2k return k, otherwise
+                                //-- return -1.
+{ for k := 0 to 35 do
+  { if (x & 1) eq 1 resultis x eq 1 => k, -1
+    x := x rshift 1
+   }
+  resultis -1
+ }
+
+and EvalQN(K, V) := valof       // Extract from K the field defined by
+                                //-- V.
+{ let N, W, T := V << QN.N, V << QN.W, V << QN.T
+                                // Offset, width, access type.
+  K := K lshift N               // Move desired field to the left end.
+  let S := WordSizeOb - W       // The shift needed.
+  switchon T into
+  { case 0:
+      resultis K rshift S       // Logical access.
+
+// Replace this by RSCALE when possible.     ******* ******* *******
+
+    case 1:
+      resultis K < 0 => -(-K rshift S), K rshift S
+
+                                // Numeric access.
+    case 2:
+      resultis (K & #400000,,0) ne 0
+
+                                // bitb field
+   }
+ }
+
+and EvalStringAp(S, n) :=S|n    // Apply the string S to n.
+
+// This routine is used when the node MUST be evaluable at compile
+//-- time.
+
+and EvalConst(LVX) := valof
+{ let x := rv LVX
+  if #400000 > lh x > 0 resultis rv lh x
+  Lookat(LVX)                   // Look first in the usual mode.
+  x := lh rv LVX; if #400000 > x > 0 resultis rv x
+                                // A good value found.
+                                // We can"t get a value, so let"s get a
+                                //-- good error diagnostic.
+  let c := Constant             // Save the old value of Constant.
+  Constant := true ,, true      // No error reported ,, constant value
+                                //-- needed.
+  Lookat(LVX)
+  x := rv LVX
+  let NewC := lh Constant
+  Constant := c                 // Restore the old value.
+  if #400000 > lh x > 0 resultis rv lh x
+  if NewC=-1 \ NewC=#777777 do TransReport(125, x, 0)
+                                // Complain, unless we already have.
+  rv LVX := ZERONODE+1 ,, ZERONODE
+  resultis 0
+ }

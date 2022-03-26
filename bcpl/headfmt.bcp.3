@@ -1,0 +1,181 @@
+
+// BCPL file formatter
+
+get "<BCPL>head.bcp"
+get "<BCPL>utilhead.bcp"
+
+manifest
+{ CASE  _    1                  // Value of NeededBlock after "into"
+  DECL  _    2                  // Value of NeededBlock after "static"
+                                //-- etc.
+  INTO  _    3                  // Word is "into"
+  LIST  _    4                  // Word is "list" or "table"
+  OR  _      5                  // Word is "or" or "ifnot"
+  IF  _      6                  // Word is if, unless, until,
+                                //-- while...etc.
+  DO  _      7                  // Word is "do", "then"
+  BREAK  _   8                  // Reserved word causing a break in
+                                //-- program flow
+  OP  _      9                  // Word is an operator
+  NLBIT  _   #100
+  DOEQV  _   #200               // Bit signals word is a "do"
+                                //-- equivalent e.g. "goto"
+  DOBIT  _   #400               // Need to see a "do" (or "then")
+  LABIT  _   #1000              // Bit says to use "_" for this
+                                //-- declaration
+  ORBIT  _   #2000              // Bit says need a "or" (or ifnot)
+  IFSOBIT  _ #4000              // Need an ifso (or then)
+}
+
+manifest                        // BlankLine control flags (in
+                                //-- BlankLine)
+{ HADBLANK  _    1              // Previous line was blank
+  BLANKBEFORE  _ 2              // Insert blankline before next line
+  BLANKAFTER  _  4              // Insert blank line after this line
+                                //-- (changes to BLANKAFTER)
+}
+
+// Operator precedence specifications
+
+manifest
+{ SEMIC  _  11                  // SemiColon
+  THEN  _   10                  // Fold before "then"
+  LA  _     9                   // Left arrow
+  COMMA  _  8                   // Comma
+  COND  _   7                   // =>
+  LOGOR  _  6                   // logor, \
+  LOGAND  _ 5                   // logand, &
+  RELOP  _  4                   // =, <, > etc.
+  PLUS  _   3                   // +, -
+  TIMES  _  2                   // *, /, rem
+  COMCOM  _ 1                   // ,,
+}
+
+manifest
+{ MAXLINE  _     512
+  MAXPRE  _      12             // Maximum operator precedence used
+  MAXLFF  _      20             // Maximum case/decl indentation
+  NSaveThings  _ 30             // Maximum number of things to save at
+                                //-- Errorset
+  SAVECSIZE  _   MAXLINE+NSaveThings+MAXLFF + 2
+  CHBUFSIZ  _    10
+  ASSIGNCH _ ($: lshift 9)+$=	// Assignment operator character
+}
+
+structure
+{ STRING
+  { N byte
+    C^511 byte
+  }
+}
+
+// Library routines
+
+global
+{ JSYS:    0
+  Start:   1
+  CLOSF:   6
+  INPUT:   #10
+  OUTPUT:  #11
+  EofFlg:  #21
+  POINT:   #12
+  EndRead: #26
+  Writech: #32
+  WriteN:  #33
+  WriteS:  #35
+}
+
+// Routines
+
+global
+{ ReadLines:           #401
+  ReadLine:            #402
+  TryReadLine:         #403
+  ReadLine1:           #404
+  LookupReservedWord:  #407
+  Operator:            #410
+  DoBrace:             #411
+  DoBrace1:            #412
+  DoCaseDecl:          #413
+  TryCaseDecl:         #414
+  DoComment:           #415
+  AllowComment:        #416
+  AllowSpace:          #417
+  ReadBraceName:       #420
+  SymbolConstituent:   #421
+  DoParen:             #422
+  FinishLine:          #423
+  FlushTrailingBlanks: #425
+  FlushBlanks:         #426
+  Addch:               #427
+  Getch:               #430
+  ResetInputFile:      #432
+  ReturnCh:            #433
+  ErrorSet:            #434
+  SaveState:           #435
+  RestoreState:        #436
+  Backup:              #437
+  Space:               #440
+  Match:               #441
+  Append:              #442
+  SkipEOL:             #443
+  IfComment:           #444
+  FoldLine:            #445
+  ReadInputPointer:    #446
+  IfBrace:             #447
+}
+
+// Global statics
+
+global
+{ IndentStep:         #600
+  NewLinePerBrace:    #601
+  PageWidth:          #602
+  COMCOL:             #603
+  EndBlockIndent:     #604
+  CFFactor:           #605
+  LFFactor:           #606
+  LeftMargin:         #607
+  TotalShortening:    #610
+  ThisShortening:     #611
+  BlankLine:          #612
+  MinFold:            #613
+  InDecl:             #615
+  InCase:             #616
+  DeclSeparator:      #617
+  LastBackup:         #620
+  CaseDeclUndent:     #621
+  LastShortener:      #622
+  CommentColumn:      #623
+  Indent:             #624
+  CommentFitFailures: #626
+  LabelFitFailures:   #627
+  Ch:                 #630
+  InputLines:         #631
+  OutputLines:        #632
+  NeededBlock:        #633
+  LastLabel:          #634
+  StartSyllable:      #635
+  MaxColumn:          #636
+  EofCount:           #637
+  InFile:             #640
+  OutFile:            #641
+  Line:               #642
+  SaveThings:         #643
+  BackupLabel:        #644
+  ChBuffer:           #645
+  TopPtr:             #646
+  ScnPtr:             #647
+  BotPtr:             #650
+  InputTotal:         #651
+  OutputTotal:        #652
+  NeededShortening:   #653
+  BackupCount:        #654
+  OneLineFlag:        #655
+  MinFoldCount:       #656
+  MinCommentSep:      #657
+  MaxCommentSlip:     #660
+  Needs:              #661
+  CondSign:           #662
+  MaxCaseLM:          #663
+}

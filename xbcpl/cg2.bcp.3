@@ -1,0 +1,411 @@
+
+// BCPL Code Generator -- subroutines.
+// Last modified on mon 23 aug 71 2349.20 by ae.
+
+// LoadT
+// Lose1
+// Stack
+// Store
+// NextP10reg
+// *ForceP10reg
+// *ScanRegs
+// PairP10reg
+// *StoreT
+// *StoreCodes
+// *Storein
+// StoreI
+// MoveNtoReg
+// *AddNtoReg
+// MakeNUMSimple
+// MovetoReg
+
+get "<xbcpl>headcg"
+
+let LoadT(a, b) be
+{ Arg2 := Arg1
+  Arg1 := Arg1 + Tempsize
+  if Arg1 ge TempT do { Report(909); finish }
+  H1|(Arg1), H2|(Arg1) := a, 0
+  H3|(Arg1) := b
+  H4|(Arg1) := 0
+  H5|(Arg1) := SSP
+  SSP := SSP + 1
+ }
+
+and Lose1(a, b, c, d) be
+{ SSP := SSP - 1
+  test Arg2 eq TempV
+  then
+  { H1|(Arg2), H2|(Arg2) := LOCAL, 0
+    H3|(Arg2), H5|(Arg2) := SSP-2, SSP-2
+   }
+  or Arg1, Arg2 := Arg2, Arg2 - Tempsize
+  H1|(Arg1), H2|(Arg1), H3|(Arg1), H4|(Arg1) := a, b, c, d
+  H5|(Arg1) := SSP - 1
+ }
+
+and Stack(n) be
+{1
+  if n ge SSP+3 do
+  { Store(0, SSP)
+    Initstack(n)
+    return
+   }
+
+  while n gr SSP do LoadT(LOCAL, SSP)
+
+L:
+  if n eq SSP return
+
+  unless Arg2 eq TempV do
+  { Arg1 := Arg2
+    Arg2 := Arg1 - Tempsize
+    SSP := SSP - 1
+    goto L
+   }
+
+  if n eq SSP-1 do
+  { for i := 0 to Tempsize-1 do Arg1|(i) := Arg2|(i)
+    SSP := n
+    H1|(Arg2), H2|(Arg2), H3|(Arg2) := LOCAL, 0, SSP-2
+    H5|(Arg2) := SSP-2
+    return
+   }
+
+  Initstack(n)
+ }1
+
+and Store(P, R) be
+{1
+  let t := TempV
+  until t gr Arg1 do
+  { let S := H5|(t)
+    if S gr R return
+    if S ge P do StoreT(t)
+    t := t + Tempsize
+   }
+ }1
+
+and NextP10reg() := valof       // Return a free register number
+{ for i:=1 to #17
+  do if P10regV|i eq 0 do { P10regV|i:=1; resultis i }
+  resultis ForceP10reg()
+ }
+
+and ForceP10reg() := valof
+{ let x:=nil                    // temp for the stuff below
+  ScanRegs()                    // scan the stack to update P10regV
+                                // first, look for a 0 item
+  for i:=0 to #17
+  do if P10regV|i eq 0 do { P10regV|i:=1; resultis i }
+
+// having found none of those, look for the oldest
+
+  x:=TempV
+  { if H1|x eq P10reg & P10regV|(H3|x) eq 1 goto Fnd
+    x:=x+Tempsize
+   }
+  repeatuntil x ge Arg2         // leave top two args alone
+                                // real screw up
+  Report(9999)
+  Store(0,SSP)
+  resultis ForceP10reg()
+
+Fnd:                            // found a reg
+  StoreT(x)                     // unload it
+  resultis ForceP10reg()
+ }
+
+and ScanRegs() be
+{ let x:=TempV
+  for i:=0 to #17
+  do if P10regV|i ge 0 do P10regV|i:=0
+  { if H1|x eq P10reg do
+    { let r:=H3|x
+      if P10regV|r eq 0 do P10regV|r:=1
+     }
+    x:=x+Tempsize
+   }
+  repeatuntil x>Arg1
+ }
+
+and PairP10reg() := valof       // get a contiguous pair of regs
+{ ScanRegs()
+  for i:=0 to #16
+  do if P10regV|i eq 0 & P10regV|(i+1) eq 0 do
+     { P10regV|i,P10regV|(i+1) := 1,1
+       resultis i
+      }
+
+// no free pair ... force a free pair
+
+  Store(0,SSP-2)
+  resultis PairP10reg()
+ }
+
+and StoreT(x) be
+{storet
+  let r:=0
+  if H1|x eq LOCAL & H3|x eq H5|x do switchon H2|x into
+                                     // Vbl is where it should  be
+  { case 0: return              // nothing  to do to it
+
+    case PLUS:                  // Add to memory
+            if H4|x eq 0 goto STF
+            if H4|x eq 1 do
+            { WRMAC(AOS,0, LOCAL,H5|x, 0,0,0); goto STF
+             }
+            if H4|x eq (-1) do
+            { WRMAC(SOS,0, LOCAL,H5|x, 0,0,0); goto STF
+             }
+            { let r:=NextP10reg()
+              MoveNtoReg(H4|x,r)
+              WRMAC(ADDM,r, LOCAL,H5|x, 0,0,0)
+              goto STF
+             }
+   }
+
+  if H1|x eq NUMBER do
+  { MakeNUMSimple(x)
+    if H2|x eq 0 do switchon H3|x into
+    { case 0:    WRMAC(SETZM,0, LOCAL,H5|x, 0,0,0)
+                 goto STF
+
+      case (-1): WRMAC(SETOM,0, LOCAL,H5|x, 0,0,0)
+                 goto STF
+     }
+   }
+
+  r:=MovetoReg(x,-1)            // bring it into any reg
+  WRMAC(MOVEM,r, LOCAL,H5|x, 0,0,0)
+STF:
+  H1|x, H2|x, H3|x, H4|x := LOCAL, 0, H5|x, 0
+ }storet
+
+and StoreCodes(Part, LVopcode, LVbitn) be
+{ rv LVopcode, rv LVbitn := 0,0
+  switchon Part into
+  { case 0:   rv LVopcode := MOVEM; return
+
+    case RH:  rv LVopcode := HRRM; return
+
+    case LH:  rv LVopcode := HRLM; return
+
+    case RHZ: rv LVopcode:=HRRZM ; return
+
+    case LHZ: rv LVopcode:=HRLZM ; return
+
+    case Q1:  rv LVbitn := 35; endcase
+
+    case Q2:  rv LVbitn := 26; endcase
+
+    case Q3:  rv LVbitn := 17; endcase
+
+    case Q4:  rv LVbitn := 8
+   }
+  rv LVopcode := OpDPB          // not to be confused with the routine
+                                //-- DPB
+  return
+ }
+
+and Storein(k,n,p) be
+{storein
+  let r,o,b:=MovetoReg(Arg1,-1),nil,nil
+  StoreCodes(p, lv o, lv b)
+  WRMAC(o, r, k, n, 0,0, (b>0=>-1,0), 9, b)
+  Stack(SSP-1)
+ }storein
+
+and StoreI(p) be
+{storei
+  let Sr:=MovetoReg(Arg2, -1)
+  and Rr,OPC,BN,m := nil, nil, nil, H2|Arg1
+
+  test m eq PLUS
+  ifnot m:=0
+  ifso
+  { let n:=H4|Arg1
+    test (lh n eq 0) logor (n<0 & (lh (-n) eq 0))
+    ifso m,H2|Arg1 := n,0
+    ifnot m:=0
+   }
+
+  Rr:=MovetoReg(Arg1, -1)
+
+  StoreCodes(p, lv OPC, lv BN)
+  WRMAC(OPC, Sr, NUMBER, m, 0, Rr, (BN>0=>-1,0), 9, BN)
+  Stack(SSP-2)
+ }storei
+
+and MoveNtoReg(N,R) be
+{ if N eq 0 do { WRMAC(SETZ, R, 0,0, 0,0,0); return }
+  if N eq (-1) do { WRMAC(SETO, R, 0,0, 0,0,0); return }
+  if rh N eq 0 do { WRMAC(MOVSI, R, NUMBER, lh N, 0,0,0); return }
+  if ((rh N)&#777777) eq #777777 do
+  { WRMAC(HRLOI, R, NUMBER, (lh N)&#777777, 0,0,0); return
+   }
+  if lh N eq 0 do
+  { WRMAC(MOVEI, R, NUMBER, (rh N)&#777777, 0,0,0); return
+   }
+  if ((lh N)&#777777) eq #777777 do
+  { WRMAC(HRROI, R, NUMBER, (rh N)&#777777, 0,0,0); return
+   }
+  if N<0 & lh (-N) eq 0 do
+  { WRMAC(MOVNI, R, NUMBER, -N, 0,0,0); return
+   }
+
+  WRMAC(MOVE, R, NUMBER, N, 0,0,1)
+                                // Literal
+  return
+ }
+
+and AddNtoReg(N, R) be
+{ let NegFlg:=(N<0)
+  if N eq 0 return
+  if NegFlg do N:=-N
+
+  if lh N eq 0 do
+  { WRMAC(NegFlg=>SUBI,ADDI,R, NUMBER, N, 0,0,0); return
+   }
+
+  WRMAC(NegFlg=>SUB,ADD,R, NUMBER,N, 0,0,1)
+                                // Literal
+  return
+ }
+
+and MakeNUMSimple(x) be
+{ unless H1|x eq NUMBER return
+  switchon H2|x into
+  { case RVPLUS: H3|x,H2|x := H3|x + H4|x , RV
+    case RV:     return         // can^t simplify
+
+    case 0:      endcase
+
+    case PLUS:   H3|x:=H3|x+H4|x; endcase
+
+    case LH:     H3|x:= lh H3|x; endcase
+
+    case RH:     H3|x:= rh H3|x; endcase
+
+    case Q1:     H3|x:= q1 H3|x; endcase
+
+    case Q2:     H3|x:= q2 H3|x; endcase
+
+    case Q3:     H3|x:= q3 H3|x; endcase
+
+    case Q4:     H3|x:= q4 H3|x; endcase
+
+    case LHZ:    H3|x:=#777777 & lh H3|x
+    case RHZ:    H3|x:=#777777 & rh H3|x
+    case Q1Z:    H3|x:=#777 & q1 H3|x
+    case Q2Z:    H3|x:=#777 & q2 H3|x
+    case Q3Z:    H3|x:=#777 & q3 H3|x
+    case Q4Z:    H3|x:=#777 & q4 H3|x
+   }
+  H2|x := 0
+  H4|x := 0
+  return
+ }
+
+and MovetoReg(x, Reg) := valof  // returns the register used
+{loadreg
+  test H1|x eq P10reg
+  ifso
+  { if Reg<0 do Reg:=H3|x
+   }                            // If it^s there already, use it
+  ifnot
+  { if Reg<0 do Reg:=NextP10reg()
+   }                            // O^E get a free one
+
+// do we have to do anything?
+  if H1|x eq P10reg & H3|x eq Reg & H2|x eq 0 resultis Reg
+                                // No
+
+  if H1|x eq NUMBER do
+  { MakeNUMSimple(x)
+    if H2|x eq 0                // pure number
+    do
+    { MoveNtoReg(H3|x,Reg)
+      H1|x,H3|x,H4|x := P10reg,Reg,0
+      resultis Reg
+     }
+    if H2|x ne RV do { Report(9999); finish }
+                                // afu
+    WRMAC(MOVE,Reg,NUMBER,rh H3|x, 0,0,0)
+                                // load from that loc
+    H1|x,H2|x,H3|x,H4|x:=P10reg,0,Reg,0
+    resultis Reg
+   }
+
+// LOCAL, GLOBAL, LABEL or other P10reg by now
+
+  switchon H2|x into
+  {load
+    case 0:      WRMAC(MOVE,Reg, H1|x,H3|x, 0,0,0)
+                 endcase
+
+    case PLUS:   WRMAC(MOVE,Reg, H1|x,H3|x, 0,0,0)
+                 AddNtoReg(H4|x,Reg)
+                 endcase
+
+    case RV:     H2|x:=0
+    DoRV:        MovetoReg(x,Reg)
+                                // get it without the RV
+                 WRMAC(MOVE,Reg,NUMBER,0, 0,Reg,0)
+                 endcase
+
+    case RVPLUS: test (lh H4|x) eq 0 logor (H4|x<0 & lh(-(H4|x)) eq 0)
+                 ifso
+                 { let n:=H4|x
+                   H2|x:=0
+                   MovetoReg(x,Reg)
+                   WRMAC(MOVE,Reg,NUMBER,n, 0,Reg,0)
+                   endcase
+                  }
+                 ifnot
+                 { H2|x := PLUS
+                   goto DoRV
+                  }
+
+    case RH:     WRMAC(HRRE,Reg, H1|x,H3|x, 0,0,0)
+                 endcase
+
+    case LH:     WRMAC(HLRE,Reg,H1|x,H3|x, 0,0,0)
+                 endcase
+
+    case Q1:     WRMAC(HRL,Reg,H1|x,H3|x, 0,0,0)
+                 WRMAC(LSH,Reg,NUMBER,9,0,0,0)
+                 WRMAC(ASH,Reg,NUMBER,-27, 0,0,0)
+                 endcase
+
+    case Q3:     WRMAC(HLL,Reg,H1|x,H3|x, 0,0,0)
+                 WRMAC(LSH,Reg,NUMBER,9,0,0,0)
+                 WRMAC(ASH,Reg,NUMBER,-27, 0,0,0)
+                 endcase
+
+    case Q2:
+    case Q4:     WRMAC((H2|x eq Q2)=> HRL,HLL,Reg,H1|x,H3|x, 0,0,0)
+                 WRMAC(ASH,Reg,NUMBER,-27, 0,0,0)
+                 endcase
+
+    case RHZ:    WRMAC(HRRZ,Reg, H1|x,H3|x, 0,0,0)
+                 endcase
+
+    case LHZ:    WRMAC(HLRZ,Reg,H1|x,H3|x, 0,0,0)
+                 endcase
+
+    case Q3Z:
+    case Q1Z:    WRMAC((H2|x=Q3Z)=>HLR,HRR,Reg,H1|x,H3|x, 0,0,0)
+                 WRMAC(ANDI,Reg,NUMBER,#777,0,0,0)
+                 endcase
+
+    case Q2Z:
+    case Q4Z:    WRMAC((H2|x eq Q2Z)=> HRR,HLR,Reg,H1|x,H3|x, 0,0,0)
+                 WRMAC(ASH,Reg,NUMBER,-9, 0,0,0)
+                 WRMAC(ANDI,Reg,NUMBER,#777,0,0,0)
+   }load
+
+  H1|x, H2|x, H3|x, H4|x := P10reg, 0, Reg, 0
+  resultis Reg
+ }loadreg
+

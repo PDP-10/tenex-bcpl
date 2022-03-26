@@ -1,0 +1,194 @@
+
+// Code Generator for BCPL on TENEX -- Structure Stuff.
+
+// Addrble
+// Iszero
+// Makeaddrble
+// Addr
+// CGstindc
+// CGrvcandrvcn
+// CGcfgandcfgn
+// CGspcandslc
+
+get "<xbcpl>headcg"
+
+let Addrble(x) := valof
+{addrble
+  let M:=nil
+  MakeNUMSimple(x)
+  M:= H2|x
+  if M eq 0 & H1|x ne NUMBER resultis true
+  if M eq RV & H1|x eq NUMBER resultis true
+
+  resultis (H1|x eq P10reg) &
+
+  (M eq RV logor (M eq RVPLUS & (lh H4|x) eq 0))
+ }addrble
+
+and Iszero(x) := H1|x eq NUMBER & H2|x eq 0 & H3|x eq 0
+
+and Makeaddrble(x) be
+{ma
+  let M,D:=nil,nil
+  if Addrble(x) return
+
+  M,D := H2|x, H4|x
+  unless H1|x eq P10reg
+  do if M eq RV logor M eq RVPLUS do
+     { H2|x,H4|x:=0,0
+       MovetoReg(x,-1)
+       H2|x,H4|x := M,D
+       if Addrble(x) return
+      }
+
+// well, that didn^t work.
+
+  MovetoReg(x,-1)
+ }ma
+
+and Addr(x,v) := valof
+{addr
+  for i:=0 to 6 do v|i := 0
+  Makeaddrble(x)
+  v|0,v|1 := H1|x,H3|x          // the normal case
+  if H1|x eq NUMBER
+  do test H2|x eq RV
+     ifnot Report(979)          // bug*
+     ifso v|4:=0
+
+  if H1|x eq P10reg &(H2|x eq RV \ H2|x eq RVPLUS)
+  do v|0,v|1,v|3:=NUMBER,(H2|x eq RVPLUS => H4|x,0) , H3|x
+  resultis v
+ }addr
+
+and CGstindc() be
+{ let f,q,x:=Arg1,Arg2,Arg2-Tempsize
+  let w:=Readop()
+  let v:=vec 10
+  if Arg2 eq TempV do           // get the 3rd argument if it isn^t in
+                                //-- the pseudo stak.
+  { x:=v
+    H1|x,H2|x,H3|x,H5|x:=LOCAL,0,SSP-3,SSP-3
+   }
+  let rp:=PairP10reg()
+  Makeaddrble(x)
+  Makeaddrble(q)
+  test (H1|f eq NUMBER) & (H2|f eq 0) then
+  { WRMAC(MOVE,
+          rp+1,
+          NUMBER,
+          ((((36-w-((H3|f) rem 36)) lshift 6) logor w) lshift 6),,(H3|f)/36,
+          0,
+          0,
+          1)
+    CompMAC(ADD,rp+1,Addr(q,V1))
+   }
+  or
+  { MovetoReg(f,rp)
+    WRMAC(IDIVI,rp,NUMBER,36,0,0,0)
+    CompMAC(ADD,rp,Addr(q,V1))
+    WRMAC(ADDI,rp+1,NUMBER,w-36,0,0,0)
+    WRMAC(MOVN,rp+1,P10reg,rp+1,0,0,0)
+    WRMAC(LSH,rp+1,NUMBER,6,0,0,0)
+    WRMAC(ORI,rp+1,NUMBER,w,0,0,0)
+    WRMAC(LSH,rp+1,NUMBER,24,0,0,0)
+    WRMAC(HRR,rp+1,P10reg,rp,0,0,0)
+   }
+  MovetoReg(x,rp)
+  WRMAC(OpDPB,rp,P10reg,rp+1,0,0,0)
+  Stack(SSP-3)
+ }
+
+and CGrvcandrvcn(w) be
+{ let f,q:=Arg1,Arg2
+
+  let rp:=PairP10reg()
+  Makeaddrble(q)
+  test (H1|f eq NUMBER) & (H2|f eq 0) then
+  { WRMAC(MOVE,
+          rp+1,
+          NUMBER,
+          ((((36-w-((H3|f) rem 36)) lshift 6) logor w) lshift 6),,(H3|f)/36,
+          0,
+          0,
+          1)
+    CompMAC(ADD,rp+1,Addr(q,V1))
+   }
+  or
+  { MovetoReg(f,rp)
+    WRMAC(IDIVI,rp,NUMBER,36,0,0,0)
+    CompMAC(ADD,rp,Addr(q,V1))
+    WRMAC(ADDI,rp+1,NUMBER,w-36,0,0,0)
+    WRMAC(MOVN,rp+1,P10reg,rp+1,0,0,0)
+    WRMAC(LSH,rp+1,NUMBER,6,0,0,0)
+    WRMAC(ORI,rp+1,NUMBER,w,0,0,0)
+    WRMAC(LSH,rp+1,NUMBER,24,0,0,0)
+    WRMAC(HRR,rp+1,P10reg,rp,0,0,0)
+   }
+  WRMAC(OpLDB,rp,P10reg,rp+1,0,0,0)
+  if Op eq RVCN do
+  { WRMAC(TDNE,rp,NUMBER,1 lshift (w-1),0,0,1)
+    WRMAC(OR,rp,NUMBER,(-2) lshift (w-1),0,0,1)
+   }
+  Lose1(P10reg,0,rp,0)
+ }
+
+and CGcfgandcfgn(w) be
+{ let f,x:=Arg1,Arg2
+  Makeaddrble(x)
+  let rp:=PairP10reg()
+  MakeNUMSimple(f)
+  test (H1|f eq NUMBER) & (H2|f eq 0) then
+  { WRMAC(OpLDB,rp,NUMBER,MovetoReg(x,rp+1),0,0,-1,w,H3|f+w-1)
+   }
+  or
+  { Makeaddrble(f)
+    MoveNtoReg(36-w,rp)
+    CompMAC(SUB,rp,Addr(f,V1))
+    WRMAC(LSH,rp,NUMBER,6,0,0,0)
+    WRMAC(ORI,rp,NUMBER,w,0,0,0)
+    WRMAC(LSH,rp,NUMBER,24,0,0,0)
+    WRMAC(HRRI,rp,P10reg,rp+1,0,0,0)
+    MovetoReg(x,rp+1)
+    WRMAC(OpLDB,rp,P10reg,rp,0,0,0)
+   }
+  if Op eq CFGN do
+  { WRMAC(TDNE,rp,NUMBER,1 lshift (w-1),0,0,1)
+    WRMAC(OR,rp,NUMBER,(-2) lshift (w-1),0,0,1)
+   }
+  Lose1(P10reg,0,rp,0)
+ }
+
+and CGspcandslc(w) be
+{ let f,x:=Arg1,Arg2
+  let rp:=nil
+
+  Makeaddrble(x)
+  let xrg:=MovetoReg(x,-1)
+  MakeNUMSimple(f)
+  test (H1|f eq NUMBER) & (H2|f eq 0) then
+  { let lhh:=((((36-H3|f-w)lshift 6) logor w)lshift 6)
+    if Op eq SPC do
+    { WRMAC(OpDPB,xrg,NUMBER,((lhh logor StackAC),,ReadNM()),0,0,1)
+      Stack(SSP-2)
+      return
+     }
+    rp:=NextP10reg()
+    MoveNtoReg((lhh,,0),rp)
+   }
+  or
+  { Makeaddrble(f)
+    rp:=NextP10reg()
+    MoveNtoReg(36-w,rp)
+    CompMAC(SUB,rp,Addr(f,V1))
+    WRMAC(LSH,rp,NUMBER,6,0,0,0)
+    WRMAC(ORI,rp,NUMBER,w,0,0,0)
+    WRMAC(LSH,rp,NUMBER,24,0,0,0)
+   }
+  test Op eq SPC then { WRMAC(OR,rp,NUMBER,(StackAC,,ReadNM()),0,0,1)}
+  or test Op=SLC then { WRMAC(HRRI,rp,LABEL,ReadL(),0,0,0)}
+     or WRMAC(HRRI,rp,GLOBAL,ReadNM(),0,0,0)
+  WRMAC(OpDPB,xrg,P10reg,rp,0,0,0)
+  Stack(SSP-2)
+ }
+

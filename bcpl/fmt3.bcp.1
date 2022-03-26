@@ -1,0 +1,195 @@
+
+get "headfmt.bcp"
+
+let LookupReservedWord(SP) _ valof
+{ switchon Ch into
+  { case $b: if Match("reak") then
+             { rv SP _ "break"
+               resultis BREAK,,DOEQV
+             }
+             if Match("ranchon") then
+             { rv SP _ "branchon"
+               resultis DOEQV
+             }
+             endcase
+
+    case $c: if Match("ase") then
+             { rv SP _ "case"
+               resultis DOEQV
+             }
+             endcase
+
+    case $d: if Match("efault") then
+             { rv SP _ "default"
+               resultis DOEQV
+             }
+             if Match("o") then
+             { rv SP _ "do"
+               resultis DO,,0
+             }
+             endcase
+
+    case $e: if Match("ndcase") then
+             { rv SP _ "endcase"
+               resultis BREAK,,DOEQV
+             }
+             if Match("q") then
+             { rv SP _ "eq"
+               resultis OP,,RELOP
+             }
+             if Match("xternal") then
+             { rv SP _ "external"
+               resultis DECL,,0
+             }
+             endcase
+
+    case $f: if Match("inish") then
+             { rv SP _ "finish"
+               resultis DOEQV
+             }
+             if Match("or") then
+             { rv SP _ "for"
+               resultis IF,,DOEQV\DOBIT
+             }
+             endcase
+
+    case $g: if Match("e") then
+             { rv SP _ "ge"
+               resultis OP,,RELOP
+             }
+             if Match("lobal") then
+             { rv SP _ "global"
+               resultis DECL,,0
+             }
+             if Match("oto") then
+             { rv SP _ "goto"
+               resultis BREAK,,DOEQV
+             }
+             if Match("r") then
+             { rv SP _ "gr"
+               resultis OP,,RELOP
+             }
+
+             endcase
+
+    case $i: if Match("f") then
+             { rv SP _ "if"
+               resultis IF,,DOEQV\DOBIT
+             }
+             if Match("fnot") then
+             { rv SP _ "ifnot"
+               resultis OR,,NLBIT
+             }
+             if Match("fso") then
+             { rv SP _ "ifso"
+               resultis DO,,NLBIT
+             }
+             if Match("nto") then
+             { rv SP _ "into"
+               resultis INTO,,0
+             }
+             endcase
+
+    case $l: if Match("e") then
+             { rv SP _ "le"
+               resultis OP,,RELOP
+             }
+             if Match("ist") then
+             { rv SP _ "list"
+               resultis LIST,,0
+             }
+             if Match("ogand") then
+             { rv SP _ "logand"
+               resultis OP,,LOGAND
+             }
+             if Match ("ogor") then
+             { rv SP _ "logor"
+               resultis OP,,LOGOR
+             }
+             if Match("oop") then
+             { rv SP _ "loop"
+               resultis BREAK,,DOEQV
+             }
+             if Match("s") then
+             { rv SP _ "ls"
+               resultis OP,,RELOP
+             }
+             endcase
+
+    case $m: if Match("anifest") then
+             { rv SP _ "manifest"
+               resultis DECL,,LABIT
+             }
+             endcase
+
+    case $o: if Match("r") then
+             { rv SP _ "or"
+               resultis OR,,NLBIT
+             }
+             endcase
+
+    case $r: if Match("em") then
+             { rv SP _ "rem"
+               resultis OP,,TIMES
+             }
+             if Match("epeatuntil") then
+             { rv SP _ "repeatuntil"
+               resultis IF,,Needs
+             }
+             if Match("epeatwhile") then
+             { rv SP _ "repeatwhile"
+               resultis IF,,Needs
+             }
+             if Match("esultis") then
+             { rv SP _ "resultis"
+               resultis BREAK,,DOEQV
+             }
+             if Match("eturn") then
+             { rv SP _ "return"
+               resultis BREAK,,DOEQV
+             }
+             endcase
+
+    case $s: if Match("tatic") then
+             { rv SP _ "static"
+               resultis DECL,,0
+             }
+             if Match("witchon") then
+             { rv SP _ "switchon"
+               resultis DOEQV
+             }
+             endcase
+
+    case $t: if Match("able") then
+             { rv SP _ "table"
+               resultis LIST,,0
+             }
+             if Match("est") then
+             { rv SP _ "test"
+               resultis IF,,DOEQV\ORBIT\IFSOBIT
+             }
+             if Match("hen") then
+             { rv SP _ "then"
+               resultis DO,,0
+             }
+             endcase
+
+    case $u: if Match("nless") then
+             { rv SP _ "unless"
+               resultis IF,,DOEQV\DOBIT
+             }
+             if Match("ntil") then
+             { rv SP _ "until"
+               resultis IF,,DOEQV\DOBIT
+             }
+             endcase
+
+    case $w: if Match("hile") then
+             { rv SP _ "while"
+               resultis IF,,DOEQV\DOBIT
+             }
+    default: endcase
+  }
+  resultis 0
+}
+

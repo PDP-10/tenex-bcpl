@@ -1,0 +1,58 @@
+manifest
+{
+
+
+
+  ofOutput:	#400000,,0
+  ofNewFile:	#200000,,0
+  ofOldFile:	#100000,,0
+  ofMessage:	#40000,,0
+  ofConfirm:	#20000,,0
+  ofTemporary:	#10000,,0
+  ofRetype:	#4000,,0
+  ofNoAccess:	#2000,,0
+  ofIgnoreDeleted:
+		#1000,,0
+  ofAssignJFN:	#600,,0	
+  ofAssignOnly:	#400,,0	
+  ofInputStars:	#100,,0	
+  ofOutputStars:#40,,0	
+  ofReturnFlags:#20,,0	
+  ofScratch:	#10,,0	
+
+
+
+
+  ofMode:	#400,,0
+  ofRead:       #200000
+  ofWrite:	#100000	
+  ofExecute:	#40000	
+  ofAppend:	#20000	
+  ofPerPageTable:
+		#10000	
+  ofProtected:	#4000	
+  ofThawed:	#2000	
+  ofWait:	#1000	
+  ofNoChangeDate:
+		#400	
+  ofNoWait:	#200	
+
+
+
+
+
+
+  ofBadArgs:	-1	
+  ofGTJFNerror:	-2	
+  ofOPENFerror:	-3	
+  ofBadOpenF:	-4
+  ofBadGetJFN:	-5
+}
+
+global
+{ GetJFN:	8079
+
+  OpenF:	8080
+
+  OpenFile:	8081
+}

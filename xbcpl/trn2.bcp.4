@@ -1,0 +1,505 @@
+
+// BCPL Compiler -- Trans, Part 2.
+
+// TransLET Translate the left son of a LET node.
+// *Transdef1 Load the right sides of definitions other than VALDEFs.
+// *TD1  Do the work for Transdef1
+// *Transdef2 Load the right sides of VALDEFs that are LIST or VEC.
+// *TD2  Do the work for Transdef2
+
+// *DeclNames Declare names.
+// *DeclDyn  Declare dynamic variables.
+// DeclStat Declare a static item.
+// EnterExt Enter an external name into ExtDecl.
+// DeclExtList Declare a list of external names.
+
+// AddName  Add a new name that has been declared.
+//******The next two routines were hand-coded, and live in HANDCD.MAC
+// CellWithName Return the Dvec entry of a cell with a given name.
+// CheckDistinct Check that names declared in a block head are
+//-- distinct.
+//******
+
+// ListLength Return the length of a list.
+// *TableSpace Total amount of static space required by a table.
+// * local to this file.
+
+get "<XBCPL>headtrn"            // Declarations for Trans.
+get "<XBCPL>headsymb"           // Symbol table stuff.
+
+// Translate the left son of a LET node.
+
+let TransLET(x) be
+{ let DE, DS, S := DvecE, DvecS, SSP
+  and V := VecSSP
+  and SB := SwitchBlock
+  and ST := SymtabNextN()
+  SwitchBlock := false
+  x := rh x
+  let Def := rh H2|x            // The definition.
+  while H1|Def eq LINE do
+  { Curline := H2|Def; Out2(LINE, Curline); Def := rh H3|Def
+   }
+  DeclNames(Def)
+  CheckDistinct(DS, DvecS)
+  DvecE := DvecS
+  VecSSP := SSP
+  SSP := S
+  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+  Decllabels(H3|x)
+  Transdef1(Def)
+  { let OldVecSSP := VecSSP
+    Transdef2(Def)
+    VecSSP := OldVecSSP
+   }
+  SSP := VecSSP
+  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+  Out2(STACK, SSP)
+  Out1(STORE)
+  Trans(H3|x)
+  VecSSP := V
+  DvecE, DvecS, SSP := DE, DS, S
+  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+  SwitchBlock := SB
+  if SWbits << SW.Symtab do EnterEnd(ST)
+  Out2(STACK, SSP)
+ }
+
+and Transdef1(x) be             // Load right side(s) of a definition.
+                                //-- Called from TransLET.
+{ if x eq 0 return
+  while H1|x eq LINE do
+  { Curline := H2|x; Out2(LINE, Curline); x := rh H3|x; if x eq 0 return
+   }
+  switchon H1|x into
+  { case AND:
+       Transdef1(H2|x)
+       Transdef1(H3|x)
+       endcase
+
+    case VALDEF:
+       { let S := SSP
+         Lookat(H3+x)
+         TD1(H3|x)
+         let n := (SSP - S) - H4|x
+                                // Difference between number of names
+                                //-- and of values.
+         if n eq 0 endcase      // All is well if they are the same.
+         TransReport(n > 0 => 130, 131, x, 0)
+                                // Oops.
+         endcase
+        }
+
+    case FNDEF:
+    case RTDEF:                 // Function or routine definition.
+       { let oldfnm:=CURFNM
+         let oldmax:=PDRMAXSSP
+         let L := 0
+         let DE, DS, DP := DvecE, DvecS, DvecP
+         let S := SSP
+         let VB, SB, RB := ValofBlock, SwitchBlock, RepeatBlock
+         ValofBlock, SwitchBlock, RepeatBlock := false, false, false
+         let EL := Endcaselabel
+         Endcaselabel := 0
+         let FBody, RBody := FunctionBody, RoutineBody
+         if FBody\RBody do
+         { L := NextParam(BlockA)
+           Compjump(L)          // Compile jump round body.
+          }
+         RoutineBody := H1|x eq RTDEF
+         FunctionBody := RoutineBody => false,true
+                                // Are we in a routine body?
+                                // Compile the entry point.  H5|x was
+                                //-- set in DeclNames to the label of
+                                //-- this routine.
+         CURFNM:=H2|(H2|x)
+         Compentry(H2|x, H5|x)  // H2|x is the name.
+         SSP := Savespacesize   // Start a new stack frame.
+         PDRMAXSSP := SSP
+         let ST := SymtabNextN()
+
+         DvecP := DvecS
+         DeclDyn(H3|x, STparam) // Declare the formal parameter list.
+         if SWbits << SW.Symtab do SymtabStoreArgs(lh H5|x, SSP - Savespacesize)
+         CheckDistinct(DS, DvecS)
+                                // Two parameters with the same name?
+         DvecE := DvecS         // Make the parameters known.
+
+// change the ocode interpreter to expect another arg to SAVE
+                                // Compile the body of the thing.
+         Out2(SAVE, SSP)
+// leave space for later stuffing of MAXSSP
+let ocp_ruppersptr()
+OutL(0)
+
+         test RoutineBody
+         ifso
+         { let S := SSP
+           Decllabels(H4|x); Trans(H4|x)
+           Out1(RTRN)
+          }
+         ifnot { Lookat(H4+x); Load(H4|x); Out1(FNRN) }
+
+// put out an ENDEF ocode item after stuffing MAXSSP
+
+         SSP := S
+         if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+         DvecE, DvecS, DvecP := DE, DS, DP
+         if SWbits << SW.Symtab do EnterEnd(ST)
+         Out2(STACK, SSP)
+
+         if FBody\RBody do Complab(L)
+let newocp_ruppersptr()
+suppersptr(ocp)
+OutL(PDRMAXSSP)
+suppersptr(newocp)
+Out1(ENDEF)
+                                // The jump around the body.
+         ValofBlock, RepeatBlock, SwitchBlock := VB, RB, SB
+         Endcaselabel := EL
+         FunctionBody, RoutineBody := FBody, RBody
+         PDRMAXSSP:=oldmax
+         CURFNM:=oldfnm
+        }
+
+    default:
+   }
+ }
+
+// TD1 is called by
+// Transdef, case VALDEF, to process the right side.
+// TD2, case LIST, to process the list.
+// In general, it loads the relevant value(s) into the stack, but VEC
+//-- and LIST are special.
+// For these only the label is loaded and VecSSP is incremented by the
+//-- space needed.  The space
+// for a VEC and the data for a LIST are provided later by TD2, after
+//-- the entire right side
+// of the VALDEF has been processed.
+
+and TD1(x) be
+{ let tt:=nil
+  x := rh x
+  switchon H1|x into
+  { default:      Load(x)
+                  endcase
+
+    case VEC:     tt:=EvalConst(H2+x)
+                  Out3P(DYNVECDEC, VecSSP,tt)
+                  SSP := SSP + 1
+                  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                  VecSSP := VecSSP + 1 + tt
+                  endcase
+
+    case LIST:    Out2(LLP, VecSSP)
+                  SSP := SSP + 1
+                  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                  VecSSP := VecSSP + TableSpace(H2|x)
+                  endcase
+
+    case COMMA:   TD1(H2|x)
+                  TD1(H3|x)
+                  endcase
+
+    case REPVAL:  unless #400000 > lh H2|x > 0 do
+                  { TransReport(127, x, 0); endcase
+                   }
+    case REPNAME: 
+{ let m_EvalConst(H3+x)
+unless 1 le m le 2000 do
+{ TransReport(37,x,0) ; m_1}
+for i := 1 to m do TD1(H2|x)
+}
+   }
+ }
+
+// Look through the right side of a definition for VALDEFs and call TD2
+//-- to process them.
+// Called from TransLET.
+
+and Transdef2(x) be
+{ x := rh x
+  if x eq 0 return
+  while H1|x eq LINE do
+  { x := rh H3|x; if x eq 0 return
+   }
+  if H1|x eq AND do
+  { Transdef2(H2|x)
+    Transdef2(H3|x)
+    return
+   }
+  if H1|x eq VALDEF do TD2(H3|x)
+ }
+
+// This routine is called from Transdef2, case VALDEF, to process LISTs
+//-- and VECs.
+
+and TD2(x) be
+{ x := rh x
+  switchon H1|x into
+  { case VEC:     SSP := SSP + 1 + EvalConst(H2+x)
+                  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                  Out2(STACK, SSP)
+    default:      endcase
+
+    case LIST:    VecSSP := SSP + ListLength(H2|x)
+                  TD1(H2|x)
+                  TD2(H2|x)
+                  endcase
+
+    case COMMA:   TD2(H2|x)
+                  TD2(H3|x)
+                  endcase
+
+    case REPNAME: 
+{ let m_EvalConst(H3+x)
+unless 1 le m le 2000 do
+{ TransReport(37,x,0) ; m_1}
+for i := 1 to m do TD2(H2|x)
+}
+   }
+ }
+
+// Declare the names in a set of declarations.  Dynamic names (case
+//-- VALDEF) are processed by
+// DeclDyn, which steps SSP by the number of names declared.  Names of
+//-- functions and routines
+// are declared as static items by DeclStat.  Leave symbol table offset
+//-- in FNDEF and RTDEF nodes.
+// This routine is called only from TransLET.
+
+and DeclNames(x) be
+{ if x eq 0 return
+  if H1|x eq LINE do
+  { Curline := H2|x; Out2(LINE, Curline); x := H3|x
+   }
+  switchon H1|x into
+  { case AND:
+      DeclNames(H2|x)
+      DeclNames(H3|x)
+      endcase
+
+    case VALDEF:
+      { let S := SSP
+        DeclDyn(H2|x, STlocal)
+        H4|x := SSP - S         // Record number of names declared.
+        endcase
+       }
+
+    case RTDEF:
+    case FNDEF:
+      { H5|x := NextParam(BlockA)
+                                // The label to be associated with the
+                                //-- function or routine.
+        let STtype :=
+          H1|x eq RTDEF => STstaticYYYYroutine, STstaticYYYYfunction
+                                // Symbol table type.
+        lh H5|x := DeclStat(H2|x, STtype)
+                                // Declare name static, saving symbol
+                                //-- table offset.
+        Out2P(ITEML, rh H5|x)   // Store the label for it.
+        endcase
+       }
+
+    default:
+      TransReport(102, x, 0)    // Compiler error.
+   }
+ }
+
+// Declare 1 or more dynamic names, in a formal parameter list or on
+//-- the left side of a
+// VALDEF.  Step SSP as appropriate.  This routine is called from
+// DeclNames, case VALDEF, to process the names being declared.
+// Transdef1, case FNDEF and RTDEF to process the formal parameters.
+// In the former case Type is STlocal, and in the latter it is STparam.
+
+and DeclDyn(x, Type) be
+{ if x eq 0 return
+  switchon H1|x into
+  { case NAME:
+      AddName(x, LOCAL, SSP)
+      if SWbits << SW.Symtab do EnterSymbol(x, Type, SSP)
+      SSP := SSP + 1
+      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+      endcase
+
+    case NIL:
+      SSP := SSP + 1
+      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+      endcase
+
+    case COMMA:
+      DeclDyn(H2|x, Type)
+      DeclDyn(H3|x, Type)
+      endcase
+
+    case REPNAME:               // Look at left son??? ::::::: :::::::
+      { let n := EvalConst(H3+x)
+                                // The number of replications.
+        unless 1 le n le 2000 do { TransReport(37, x, 0); endcase }
+                                // Negative replictation count.
+        SSP := SSP + n
+        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+        endcase
+       }
+
+    default:
+      TransReport(103, x, 0)    // Compiler error.
+   }
+ }
+
+// The call   F _ DeclStat(x, Type)   is used to declare  x  to be a
+//-- static item of type Type,
+// and get back its offset in the symbol table.  If x is not external,
+//-- add it to Dvec
+// with a new label, M.
+// If x is external,
+// if x is undefined and unused, add to ExtDecl with a new label, M,.
+// if x is undefined but associated with a label, call it M,.
+// if x is defined, error 142 (multiple use of a name).
+// Output datalab M.
+// The returned value is used for FNDEF and RTDEF so the number of
+//-- arguments can be stored
+// later into the symbol table.
+// This routine is called from
+// Trans, case STATIC, to declare the static item.
+// DeclNames, to declare the name of a function or routine.
+// Scanlabels, to declare a label.
+
+and DeclStat(x, Type) := valof
+{ Impures()                     // The data item goes into block B.
+  StaticN := StaticN + 1        // Count static cells.
+  let L := nil                  // To hold the label.
+  let t := CellWithName(x)      // Look up the name in the symbol
+                                //-- table.
+  let SWext := lh Dvec|t eq EXT
+                                // Is the name currently declared
+                                //-- external?
+  if FunctionBody\RoutineBody do SWext:=false
+  test SWext
+  ifnot                         // No, so declare it a simple static
+                                //-- item with a new label.
+  { L := NextParam(BlockB)
+    AddName(x, LABEL, L)
+    if (lh Dvec|t)=GLOBAL
+    do unless FunctionBody\RoutineBody do Out3P(GLOBAL,Dvec|(t+1),L)
+   }
+  ifso                          // Yes, it is EXTERNAL.
+  { let n := rh Dvec|(t+1)      // Pointer into ExtDecl.
+    test n ge 0                 // Is the name yet in ExtDecl?
+    ifso if lh ExtDecl|(n+1) eq INT do TransReport(142, x, 0)
+                                       // Yes.
+    ifnot n := EnterExt(t)      // No, so enter it there.
+    lh ExtDecl|(n+1) := INT     // Mark it as an internal.
+    L := rh ExtDecl|(n+1)       // The associated label.
+   }
+  Compdatalab(L)
+  unless SWbits << SW.Symtab resultis 0
+  let F := EnterSymbol(x, STstatic, (Type ,, SWext))
+  resultis F
+ }
+
+// Enter the name in the Dvec cell at t into ExtDecl, with a new label.
+// Make the Dvec cell point to the ExtDecl cell and return the ExtDecl
+//-- cell.
+// This routine is called from
+// DeclStat if name is already in Dvec, and is marked EXT.
+// Simpass  storing into a name marked in Dvec as EXT.
+// name to left of LEFTLUMP marked as EXT.
+// Load  fetching a name marked in Dvec as EXT.
+// Loadlv  ditto.
+
+and EnterExt(t) := valof
+{ let S := ExtDeclS
+  if S ge ExtDeclT do { TransReport(144, 0, 0); resultis S }
+                                // Too many externals.
+  Dvec|(t+1) := S               // Store into Dvec the pointer to the
+                                //-- new ExtDecl cell.
+  ExtDecl|S := rh Dvec|t        // The name.
+  ExtDecl|(S+1) := EXT ,, NextParam(IntExt)
+                                // Type ,, associated label.
+  ExtDeclS := S + ExtDeclN
+  resultis S
+ }
+
+and DeclExtList(x) be           // Called (only) from Trans for case
+                                //-- EXT to
+                                // declare the names external.
+{ if H1|x eq COMMA do { DeclExtList(H2|x); DeclExtList(H3|x); return }
+  let k := ExtDeclS
+  { k := k - ExtDeclN
+    if k le 0 do { k := -1; break }
+   }
+  repeatuntil ExtDecl|k eq x
+  if (q4(H2|x)|0) > 6 do TransReport(2,,400,x,0)
+  AddName(x, EXT, k)
+ }
+
+// The call   AddName(Name, Type, Datum)   adds the name Name to Dvec.
+//-- Type indicates the type, and
+// Datum is a datum.  The types and associated data are
+// NUMBER  the value
+// EXT  index in ExtDecl or -1
+// LOCAL  the offset in the stack
+// INDEX  the index register number --  TX-2 only.
+// GLOBAL  the global number -- SEL only.
+// LABEL  the subscript of the label, for static declarations.
+// STRUCTURE the address of the structure definition table
+// Called from, with associated values of Type.
+// Trans, case GLOBAL  Type _ GLOBAL
+// Trans, case INDEX  Type _ INDEX
+// Trans, case MANIFEST  Type _ NUMBER
+// Trans, case FOR   Type _ LOCAL, for the controlled variable.
+// DeclDyn    Type _ LOCAL
+// DeclStat   Type _ LABEL
+// DeclExtList   Type _ EXT
+// TransStructDecl   Type _ STRUCTURE
+
+and AddName(Name, Type, Datum) be
+{ if DvecS+DvecN > DvecT do { TransReport(143, 0, 0); return }
+                                // Too many names.
+  Dvec|DvecS := Type ,, H2|Name
+                                // Type ,, location of name in
+                                //-- dictionery.
+  Dvec|(DvecS+1) := Datum       // The associated data item.
+  DvecS := DvecS + DvecN
+ }
+
+// Return the length of a list made up of COMMA and REPNAME nodes.
+//-- Called from
+// TD2, case LIST
+// SaveStaticItem, case TABLE
+// ScanTable, case TABLE
+
+and ListLength(x) := valof
+{ x := rh x
+  if H1|x eq COMMA do resultis ListLength(H2|x) + ListLength(H3|x)
+  if H1|x eq REPNAME \ H1|x eq REPVAL
+  do 
+{ let m_EvalConst(H3+x)
+unless 1 le m le 2000 do
+
+{ TransReport(37,x,0) ; m_1}
+ resultis m * ListLength(H2|x)}
+  resultis 1
+ }
+
+// Return total amount of static space required for a table.  Called
+//-- from TD1, case LIST.
+
+and TableSpace(x) := valof
+{ x := rh x
+  switchon H1|x into
+  { case COMMA:    resultis TableSpace(H2|x) + TableSpace(H3|x)
+
+    case REPNAME:  { let m_EvalConst(H3+x)
+unless 1 le m le 2000 do { TransReport(37,x,0); m_1}
+resultis m * TableSpace(H2|x)}
+
+    case VEC:      resultis 2 + EvalConst(H2+x)
+
+    case LIST:     resultis 1 + TableSpace(H2|x)
+
+    default:       resultis 1
+   }
+ }

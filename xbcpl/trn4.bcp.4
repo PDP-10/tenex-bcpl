@@ -1,0 +1,427 @@
+
+// BCPL Compiler -- Part 4 of Trans.
+
+// Transswitch Translate a "switchon" or a "branchon".
+// *Simpass  Process an individual assignment - called by Assign.
+// Assign  Translate an assignment statement.
+// * local to this file.
+
+get "<XBCPL>headtrn"            // Declarations for TRANS.
+
+let Transswitch(x) be
+{ let P := CaseP                // Save the current pointer into the
+                                //-- case table.
+  and DL, EL := Defaultlabel, Endcaselabel
+  and CL := Curline             // The line on which the switch starts.
+  let SB := SwitchBlock         // Were we in a switch block?
+  SwitchBlock := true           // Now we are.
+
+  let L := NextParam(BlockA)    // Label for the switching code.
+  Endcaselabel := NextParam(BlockA)
+                                // Label for exiting from the whole
+                                //-- thing.
+
+  Compjump(L)                   // Jump to the switching code.
+  Defaultlabel := 0             // There is as yet no default.
+  Trans(H3|x)                   // Translate the body.
+  Compjump(Endcaselabel)        // Jump to the next peice of code.
+  Complab(L)                    // Place the label for the switch.
+  SwitchBlock := false
+  Lookat(H2+x); Load(H2|x)      // That on which we are about to
+                                //-- switch.
+                                // Provide a default label.  When
+                                //-- "branchon" is implemented, this
+                                //-- should not be done for it.
+  if Defaultlabel eq 0 do Defaultlabel := Endcaselabel
+  let C := (CaseP - P) / CaseN  // The number of case labels.
+  if C eq 0 do { TransReport(154, x, 0); return }
+                                // We can"t do switches without any
+                                //-- cases.
+  Out3P(SWITCHON, C, Defaultlabel)
+
+// Now output the collected cases in descending order.
+
+  let N, Max := P, Casetable|P  // First find the largest case.
+  for k := P+CaseN step CaseN to CaseP-CaseN
+  do if Casetable|k > Max do N, Max := k, Casetable|k
+  until N < 0 do                // Output all the cases.
+  { OutN(Max); OutL(Casetable|(N+1))
+                                // Output the current case.
+    let NewMax, NewN := nil, -1
+    for n := P step CaseN to CaseP-CaseN do
+                                            // Look for the largest
+                                            //-- case less than Max.
+    { let m := Casetable|n      // The next case.
+      if (m eq Max) & (n ne N) do
+                                  // Identical case labels.
+      { let C := Curline; Curline := CL
+                                // The line on which the switch starts.
+        TransReport(155, x, "the value is ", -1, m,
+                    " and the lines on which the labels appear are",
+                    -2, Casetable|(n+2), " and", -2, Casetable|(N+2),
+                    0)
+        Curline := C
+       }
+      if m < Max & (NewN < 0 \ m > NewMax) do NewMax, NewN := m, n
+                                              // A candidate.
+     }
+    Max, N := NewMax, NewN
+   }
+  SSP := SSP - 1
+  Complab(Endcaselabel)         // Place the label to leave the whole
+                                //-- thing.
+  Endcaselabel, Defaultlabel := EL, DL
+  SwitchBlock := SB
+  CaseP := P
+ }
+
+and Simpass(x, y, Type) be      // Assign y to x, with part-word type
+                                //-- Type.
+{ x := rh x
+  switchon H1|x into
+  {                             // What sort of thing are we storing
+                                //-- into?
+
+    case FNAP:                  // The following code processes
+                                //-- functions on the left side.
+                { unless SWbits << SW.Ncs do TransReport(191, x, 0)
+                                             // Only for new calling
+                                             //-- sequence.
+                  let s := SSP
+                  unless Type eq 0 do TransReport(108, x, 0)
+                  if y eq 0 do TransReport(190, x, 0)
+                                // Function call in a left-side
+                                //-- conditional.
+                  SSP := SSP + Savespacesize
+                  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                  Out2(STACK, SSP)
+                  Loadlist(H3|x)
+                  Load(y)
+                  Load(H2|x)
+                  Out2(LVRTAP, s)
+                  SSP := s
+                  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                  return
+                 }
+
+    case NAME:
+                { let t := CellWithName(x)
+                                // Find the Dvec entry of the name.
+                  if t eq 0 do  // Name is not declared.  Complain, and
+                                //-- then declare it.
+                  { TransReport(115, 0, H2|x, 0)
+                    t := DvecS  // The next symbol table entry.
+                    AddName(x, LOCAL, 0); DvecE := DvecS
+                                // Declare it as a fictitious local.
+                   }
+                  unless y eq 0 do { Load(y); SSP := SSP - 1 }
+                                // Load the right side.
+                  let N := Dvec|(t+1)
+                                // The datum associated with the name.
+                  switchon lh Dvec|t into
+                                // What sort of name is it?
+                  { default:
+                      TransReport(122, 0, H2|x, 0)
+                                // Bad sort of name.
+                      AddName(x, LOCAL, 0); DvecE := DvecS
+                                // Don"t get this message again.
+                      return
+
+                    case LOCAL:
+                      if t < DvecP do TransReport(116, 0, H2|x, 0)
+                                      // Dynamic free variable.
+                      Out2( (table SP,
+                                   SPRH,
+                                   SPLH,
+                                   SPQ1,
+                                   SPQ2,
+                                   SPQ3,
+                                   SPQ4,
+                                   SPRHZ,
+                                   SPLHZ)|Type, N)
+                      return
+
+                    case GLOBAL:
+                                // Storing into a global.
+                      Out2( (table SG,
+                                   SGRH,
+                                   SGLH,
+                                   SGQ1,
+                                   SGQ2,
+                                   SGQ3,
+                                   SGQ4,
+                                   SGRHZ,
+                                   SGLHZ)|Type, N)
+                      return
+
+                    case EXT:   // Storing into an external.
+                      N := rh N
+                                // Offset in ExtDecl.
+                      if N < 0 do N := EnterExt(t)
+                                  // Not yet in ExtDecl, so insert it.
+                      N := ExtDecl|(N+1)
+
+                    case LABEL: // Storing into a label.
+                      Out2P( (table SL,
+                                    SLRH,
+                                    SLLH,
+                                    SLQ1,
+                                    SLQ2,
+                                    SLQ3,
+                                    SLQ4,
+                                    SLRHZ,
+                                    SLLHZ)|Type, N)
+                      return
+
+                    case INDEX: // Storing into an index register.
+                      { let Op := (table SX,
+                                         -1,
+                                         -1,
+                                         SXQ1,
+                                         SXQ2,
+                                         -1,
+                                         -1)|Type
+                                // OCODE operator.
+                        if Op < 0 do
+                        { TransReport(121, x, 0); Op := SX
+                         }
+                        if N > #17 do TransReport(126, x, 0)
+                        Out2(Op, N)
+                        return
+                       }
+
+                   }
+                 }              // end of case NAME
+
+// Continue the branch on the principle operator on the left side.
+
+    case LHZ:
+    case RHZ:
+    case LH:
+    case RH:
+    case Q1:
+    case Q2:
+    case Q3:
+    case Q4:    unless Type eq 0 do TransReport(108, x, 0)
+                Type := selecton H1|x into
+                { case RH:  1
+                  case LH:  2
+                  case Q1:  3
+                  case Q2:  4
+                  case Q3:  5
+                  case Q4:  6
+                  case RHZ: 7
+                  case LHZ: 8
+                 }
+                Assign(H2|x, y, Type)
+                return
+
+    case RV:
+    case VECAP: unless y eq 0 do Load(y)
+                LoadLV(x)
+                Out1( (table STIND,
+                             STINDRH,
+                             STINDLH,
+                             STINDQ1,
+                             STINDQ2,
+                             STINDQ3,
+                             STINDQ4,
+                             STINDRHZ,
+                             STINDLHZ)|Type )
+                SSP := SSP - (y eq 0 => 1, 2)
+                return
+
+    case COND:                  // A conditional on the left side.
+                { let L, M := NextParam(BlockA), NextParam(BlockA)
+                                // Label exit, false arm.
+                  and S := SSP
+                  unless y eq 0 do Load(y)
+                  Jumpcond(H2|x, false, M)
+                                // Jump if the boolean is false.
+                  Simpass(H3|x, 0, Type)
+                                // Compile the store for the true arm.
+                  Compjump(L)   // Hop out.
+                  SSP := y eq 0 => S, S+1
+                  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                  Complab(M)
+                  Simpass(H4|x, 0, Type)
+                                // The store for the false arm.
+                  Complab(L)
+                  SSP := S
+                  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                  return
+                 }
+
+    case RIGHTLUMP:             // P >> QN _ Y
+                { unless Type eq 0 do TransReport(108, x, 0)
+                                      // No subwords of structures,
+                                      //-- please.
+                  unless y eq 0 do Load(y)
+                  Load(H2|x)    // Load P
+
+                  let V := DoQualName(H3|x, false, false, false)
+                                // Process the offset of QN.
+                  let N := V << QN.N
+                                // The constant part of the offset.
+
+                  switchon V << QN.M into
+                                // What sort of thing was loaded?
+                  { case 1:     // Word offset loaded.
+                      Out1(PLUS)
+                                // Add it to the pointer P.
+                    case 0:     // Nothing loaded.
+                      Out2(LN, N)
+                                // Load the number.
+                      endcase
+
+                    case 2:     // Bit offset loaded.
+                      unless N eq 0 do { Out2(LN, N); Out1(PLUS) }
+                                // Add N.
+                   }
+                  Out1C(STINDC, V << QN.W)
+                                // The width.
+                  SSP := SSP - (y eq 0 => 2, 3)
+                  return
+                 }
+
+    case LEFTLUMP:              // Z << QN _ Y
+                { unless Type eq 0 do TransReport(108, x, 0)
+                                      // No subwords of structures,
+                                      //-- please.
+                  unless y eq 0 do Load(y)
+                  let Z := H2|x // The place into which to store.
+                  switchon H1|Z into
+                                // What sort of place is it?
+                  { default:    // Something mysterious.
+                      TransReport(105, x, 0); return
+
+                    case VECAP: // (A|B) << QN
+                    case RV:    // (rv A) << QN
+                    case COND:  // (P => A, B) << QN
+                      { LoadLV(Z)
+                                // Load the L-value of the place into
+                                //-- which to store.
+                        let V := DoQualName(H3|x, false, true, false)
+                                // Process the offset - no M_1.
+                        let N, W := V << QN.N, V << QN.W
+                                // The constant part of the offset,
+                                //-- width.
+                        switchon V << QN.M into
+                                // What sort of load was done?
+                        { case 0:
+                                // Nothing loaded.
+                            unless 0 le N < WordSizeOb
+                            do TransReport(2,,169, x, 0)
+                            unless N+W le WordSizeOb
+                            do TransReport(4,,193, x, 0)
+                            Out2(LN, N)
+                                // Load the constant.
+                            endcase
+                          case 2:
+                                // Bit offset loaded.
+                            unless N eq 0 do
+                            { Out2(LN, N); Out1(PLUS)
+                             }  // Add the offset.
+                         }
+                        Out1C(STINDC, W)
+                                // Width.
+                        SSP := SSP - (y eq 0 => 2, 3)
+                        return
+                       }
+                    case NAME:  // Name << QN _ Y
+                      { let Name := CellWithName(Z)
+                                // What kind of name is it?
+                        if Name eq 0 do
+                                        // It is not defined.  Oops.
+                        { TransReport(115, 0, H2|Z, 0)
+                          Name := DvecS
+                          AddName(Z, LOCAL, 0)
+                          DvecE := DvecS
+                                // Declare it.
+                         }
+                        let Datum := Dvec|(Name+1)
+                                // The datum associated with the name.
+                        and OcodeOp, OutFunction := nil, OutL
+                        switchon lh Dvec|Name into
+                                // What kind of name was it?
+                        { default:
+                            TransReport(114, x, 0); return
+
+                          case LOCAL:
+                            if Name < DvecP & Datum ne 0
+                            do TransReport(116, x, H2|Z, 0)
+                                // non-local free
+                            OcodeOp, OutFunction := SPC, OutN
+                            endcase
+
+                          case GLOBAL:
+                            OcodeOp, OutFunction := SGC, OutN
+                            endcase
+
+                          case EXT:
+                            if Datum eq -1 do Datum := EnterExt(Name)
+                            Datum := rh ExtDecl|(Datum+1)
+
+                          case LABEL:
+                            OcodeOp := SLC
+                         }
+                        let V := DoQualName(H3|x, false, true, false)
+                                // Load the offset.
+                        let N, W := V << QN.N, V << QN.W
+                                // Constant offset, width.
+                        switchon V << QN.M into
+                                // What sort of load was done?
+                        { case 0:
+                                // Nothing loaded.
+                            unless 0 le N < WordSizeOb
+                            do TransReport(2,,169, x, 0)
+                            unless N+W le WordSizeOb
+                            do TransReport(4,,193, x, 0)
+                            Out2(LN, N)
+                            endcase
+
+                          case 2:
+                            unless N eq 0 do
+                            { Out2(LN, N); Out1(PLUS)
+                             }
+                         }
+                        Out1C(OcodeOp, W); OutFunction(Datum)
+                        SSP := SSP - (y eq 0 => 1, 2)
+                        return
+                       }
+                   }            // end switchon H1|Z
+                 }              // If so, they must both be zero.
+
+    default:    TransReport(109, x, 0)
+   }
+ }
+
+and Assign(x, y, Type) := valof
+{ if x eq 0 \ y eq 0 do
+  { unless x eq 0 & y eq 0 do TransReport(110, 0, 0)
+    resultis 0
+   }
+  x, y := rh x, rh y
+  switchon H1|y into            // What sort of value is on the right?
+  { case COMMA:   unless H1|x eq COMMA do
+                  { TransReport(110, x, 0); resultis 0
+                   }
+                  resultis Assign(Assign(x, H2|y, Type), H3|y, Type)
+
+    case REPVAL:  unless #400000 > lh H2|y > 0
+                  do TransReport(127, x, 0)
+    case REPNAME: { let m_EvalConst(H3+y)
+unless 1 le m le 2000 do { TransReport(37,y,0) ; m_1}
+for i := 1 to m
+                  do x := Assign(x, H2|y, Type)
+                  resultis x
+}
+
+    default:
+   }
+
+  if H1|x eq COMMA do { Simpass(H2|x, y, Type); resultis H3|x }
+  Simpass(x, y, Type)
+  resultis 0
+ }
+

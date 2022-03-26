@@ -1,0 +1,194 @@
+28-JAN-74 10:03:12-EDT,120
+-------
+Date: 28-JAN-74 1003-EDT
+From: AURIGEMMA
+Re:   BCPLIB
+- - - -
+WAIT () CALLS FOR AN INFINITE WAIT
+-------
+25-SEP-74 13:53:04-EDT,577;000000000001
+Date: 25 SEP 1974 1353-EDT
+From: TOMLINSON
+Subject: ReadWord, IOFMT, BCALL, IBCALL, BCALL1, IBCAL1
+
+	The following 3 changes were made to BCPLIB.REL :
+1) A bug in the handling of the 4th arg to ReadWord (skipbool) in
+   UTIL was fixed.
+2) A few bugs in the FORTRAN like output IOFMT.BCP were fixed.
+3) In addition to BCALL and IBCALL, there are now BCALL1 and IBCAL1,
+   which reset the TTY Mode word, and breaking characters as they
+   normally are in BCPL (i.e. break on every character).  There are
+   saved and restored on return.
+	R.Schwartz 9/25/74
+-------
+10-OCT-74 17:09:39-EDT,412;000000000001
+Date: 10 OCT 1974 1709-EDT
+From: JOHNSON
+Subject: sfptr, STRING, inttotxt, inttoocttxt
+
+Changes:
+1) sfptr has been fixed to return 0 when it is successful as it is
+described as doing in the BCPL manual (p. 73).
+2) STRING.REL has been put into BCPLIB.
+3) INTTXT.REL has been put into BCPLIB.  This contains the two routines
+inttotxt and inttoocttxt (see BCPL manual p. 91).
+   Paul R. Johnson
+-------
+16-APR-75 09:28:08-EDT,221;000000000001
+Date: 16 APR 1975 0928-EDT
+From: JMILLER
+Subject: BCPLIB.REL;51
+
+New version of OF installed. <.> used as a default directory means
+currently connected directory, <:> means login directory.
+
+--Jim Miller
+-------
+18-JUN-75 18:29:49-EDT,1336;000000000001
+Date: 18 JUN 1975 1829-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: [BCPLIB.REL;53 -- new version of BCPLIB]
+From: JMILLER at BBN-TENEXA
+To: JMILLER
+Message-ID: <[BBN-TENEXA]18-JUN-75 18:29:37-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPLIB.CHANGES;1
+
+	
+Begin forwarded message
+          --------------------
+Mail from BBN-TENEXA rcvd at 18-JUN-75 1729-EDT
+Date: 18 JUN 1975 1723-EDT
+Sender: HALBERT at BBN-TENEXA
+Subject: BCPLIB.REL;53 -- new version of BCPLIB
+From: HALBERT at BBN-TENEXA
+To: BCPL-Group:
+Message-ID: <[BBN-TENEXA]18-JUN-75 17:23:26-EDT.HALBERT>
+
+
+	A new version of BCPLIB.REL has been put up: it
+is on <subsys> on [bbna], and on <bcpl> on the other systems,
+as usual.
+	The changes are:
+	1. BIN(-routinename) which calls a routine to do the
+input, was calling the routine with two arguments, not one as
+it should have.  This was fixed.
+	2. BCMAIN now has an entry vector of length 10, instead
+of just 3 as it was before.  In case you didn't know, when you
+jump to BCMAIN+n, using the JSYS SFRKV or whatever,  n  is
+the argument that Start is called with.  So you can
+say "let Start(EntryPointNumber) be ..."
+The EXEC command START goes to BCMAIN+0, and
+REENTER goes to BCMAIN+1.
+
+
+	Any problems, gripe to HALBERT@BBNA.
+--Dan Halbert
+          --------------------
+End forwarded message
+	
+18-JUN-75 18:33:01-EDT,512;000000000001
+Date: 18 JUN 1975 1832-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: BCPLIB.REL;54
+From: JMILLER at BBN-TENEXA
+To: JMILLER
+Message-ID: <[BBN-TENEXA]18-JUN-75 18:32:57-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPLIB.CHANGES;1
+
+
+Fixed up OF.BCP for two bugs
+1) Calling OpenFile with a negative source does not call FindInput
+   and CreateOutput any more.
+2) If the source is a string, confirmation from the teletype is not
+   required.
+--Jim Miller
+(Installed on [bbna]<subsys>, <bcpl> on other BBN systems).
+25-JUL-75 09:05:22-EDT,330;000000000001
+Date: 25 JUL 1975 0905-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: BCPLIB.REL;55
+From: JMILLER at BBN-TENEXA
+To: CALVIN
+Message-ID: <[BBN-TENEXA]25-JUL-75 09:05:17-EDT.JMILLER>
+Fcc: <DOCUMENTATION>BCPLIB.CHANGES;1
+
+Bug fix in OF -- GetJFN sets default bits to ofConfirm if input is
+from 0, 1, or 2; 0 otherwise.
+-------
+11-AUG-75 16:59:41-EDT,468;000000000001
+Date: 11 AUG 1975 1659-EDT
+Sender: HENDERSON at BBN-TENEXA
+Subject: <subsys>BCPLIB.REL;59
+From: HENDERSON at BBN-TENEXA
+Message-ID: <[BBN-TENEXA]11-AUG-75 16:59:38-EDT.HENDERSON>
+Fcc: <DOCUMENTATION>BCPLIB.CHANGES;1
+
+WriteS now does an immediate return if it is given a string
+having a count of zero. Note that there is no need to have the
+whole first word be zero (no need for PadString).
+
+Two cases of ANDing with #777 were replaced by "q4z".
+
+-------
+8-NOV-75 02:44:22-EST,480;000000000000  !
+Date: 8 NOV 1975 0244-EST
+Sender: HENDERSON at BBN-TENEXA
+Subject: <subsys>bcplib.rel;60
+From: HENDERSON at BBN-TENEXA
+To: JMILLER    
+Message-ID: <[BBN-TENEXA]8-NOV-75 02:44:21-EST.HENDERSON> 
+Fcc: <DOCUMENTATION>BCPLIB.CHANGES;1  
+
+Replaced findsubstr completely because it contained VERY bad
+bugs.
+
+Made a small fix to scanpastst so that it NOW does start the scan
+at rv chnlv.
+
+Not extensively tested, as crash progra to provide it to a
+client.
+
+-------    
+3-Apr-76 09:24:48-EST,960;000000000001
+Date: 3 Apr 1976 0924-EST
+Sender: JMILLER at BBN-TENEXA
+Subject: (FindInput(1))
+From: JMILLER at BBN-TENEXA
+To: SCHWARTZ at BBN-TENEXD
+Cc: FRENCH   
+Bcc: HALBERT 
+Message-ID: <[BBN-TENEXA]3-Apr-76 09:24:05-EST.JMILLER>
+In-Reply-To: Your message of April 2, 1976    
+Fcc: <DOCUMENTATION>BCPLIB.CHANGES,
+Fcc: <JMILLER>BCPL-SYSTEM.DIALOGUES 
+
+I've  fixed the bugs you mentioned (i.e.  if you give it a source
+of 1 or 2 it repeats until you give a valid  file  name,  and  it
+prints  the  name  of the file you give if called with a string),
+and installed it on [BBNA]<SUBSYS>BCPLB2.REL;30012.  I'm  sending
+a  copy  of  this  message to Phil French, who (I hope) will take
+care of installing it on the other BBN systems.
+
+--Jim
+
+P.S.  -- Phil,  the  source  file  for  the  changed  program  is
+<DEV-BCPLIB>BCPLIO.BCP,  and the file to be installed on <SUBSYS>
+is <DEV-BCPLIB>BCPLB2.REL (which is the BCPL run-time library).
+
+-------   
+20-Jul-76 11:35:27-EDT,440;000000000000   !
+Date: 20 Jul 1976 1131-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: <SUBSYS>BCPLB2.REL;30015
+From: JMILLER at BBN-TENEXA
+To: Halbert, Dodds, JMiller   
+Message-ID: <[BBN-TENEXA]20-Jul-76 11:31:20.JMILLER> 
+Fcc: <DOCUMENTATION>BCPLIB.CHANGES;1  
+
+
+Bug  fixes  in BPSI (interrupt package) and BYTEIO (low level I/O
+handlers) to fix some spurious errors occurring when an interrupt
+arrived within the Writech code.
+
+--Jim
+-------

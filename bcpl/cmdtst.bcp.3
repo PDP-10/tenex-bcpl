@@ -1,0 +1,123 @@
+	get "<bcpl>heAD"
+	get "<bcpl>utilhead"
+
+global
+{ gleep: #400
+  glop: #401
+}
+
+static { gleep: 41}
+
+external { foo; bar; bletch}
+
+static { bar: table 1,2,3
+}
+
+	static { x_ "abcdefGH*t*s*n*fIJKlmn" }
+static { y_ 'abcedf\ghij' }
+static
+{ A: 123
+  B: 22
+ C: 2
+}
+
+let Start() be
+{ if A \ B do C _ B
+}
+
+and Start1(a, b, c) be
+{ if a \ b & c do 
+  { let t _ a
+    a _ b
+    b _ t
+  }
+  c _ 123
+}
+
+and Start2(a, b, c) be
+{ a _ a
+  Start(a, b, c)
+}
+
+and Start3(a, b, c) be
+{ for i _ 1 to 10 do a _ i
+  for i _ 10 to 1 by -1 do { }
+  for i _ 10 to 1 by 0 do { }
+  for i _ 1 to 10 by 3 do { }
+  for i _ 1 to a do { }
+  let t _ vec 11
+  and y _ list 1, a, b, vec 10
+  if a < y \ b < t do a _ b
+label:
+  if a < 1 \ a > -1 \ a le -1 \ a ge 1 \ 1 le a \ 1 > a \ -1 < a \ -1 ge a
+  do b_0
+
+
+	while y do
+	{ if a then break
+	if b then loop
+	if c then return
+	switchon y into
+		{ case 1: if a then endcase
+		case 2: if b then return
+		case 3: if c then loop
+		case 4: if a then break
+		}
+	}
+
+	test x
+	ifso return
+	ifnot a_b
+	test x
+	ifso a_b
+	ifnot return
+	test x
+	ifnot return
+	ifso a_b
+	test x
+	ifnot a_b
+	ifso return
+
+	for i_1 to 10 do
+	{ if a then break
+	if b then loop
+	if c then return
+	switchon i into
+		{ case 1: if a then endcase
+		case 2: if b then return
+		case 3: if c then loop
+		case 4: if a then break
+		}
+	test i
+	ifso break
+	ifnot a_b
+	test i
+	ifso a_b
+	ifnot break
+	test i
+	ifnot a_b
+	ifso break
+	test i
+	ifnot break
+	ifso a_b
+	}
+	{ let t _ 12
+	  if t > 0 then break
+	  if t < 0 then return
+	  t _ rv t
+	} repeat
+
+}
+
+and Start4(a) be
+{ switchon foo into
+  { case 1: return
+    case 5 to 25: return
+  }
+  glop _ gleep
+  switchon bletch into
+  { case 1: return
+    case 10000 to 10040: return
+  }
+}
+	finish

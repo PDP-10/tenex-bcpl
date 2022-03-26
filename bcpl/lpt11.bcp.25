@@ -1,0 +1,131 @@
+
+// LPT driver
+
+get "headio.bcp"
+get "HEAD"
+
+global
+{                               // Fudge to make the computed calls in
+                                //-- IO11 work
+
+  InitLPT:  #600
+  NilFn:    #601
+  OutCh:    #602
+  GetCount: #603
+  InitLPT:  #604
+  CloseLPT: #605
+ }
+manifest
+{ LPS := rv #177514
+  LPB := rv #177516
+  PS :=  rv #177776
+  EOL := #37
+ }
+
+manifest
+{ BUFSIZE :=   #1000
+  LPTBuffer := vec BUFSIZE-1
+ }
+
+static
+{ LoadPointer:     nil          // Index into buffer for storing
+  RetrievePointer: nil          // Index into buffer for retrieving
+  BufferCount:     nil          // Current number of characters in
+                                //-- buffer
+  Column:          nil          // Current column
+  Line:            nil          // Current line
+  CRFlg:           nil          // Carriage return pending
+
+ }
+
+let InitLPT() be
+{ BufferCount := 0
+  LoadPointer, RetrievePointer := 0, 0
+  Column, Line, CRFlg := 0, 0, false
+  test LPS < 0
+  ifso WriteS (TTY, "LPT off-line!*c*l")
+  ifnot Writech (LPT, $*f)
+ }
+
+and OutCh(Ch) be
+{ if CRFlg & (Ch ne $*l) do Out1($*c)
+  CRFlg := false
+  if Ch = 0 then return		// Ignore nulls
+  switchon Ch into
+  { case $*c:   CRFlg := true    // Convert *c*l to *l for speed
+                Column := 0
+                return
+
+//    case EOL:   Column := 0
+    case $*l:   if (Line rem 66) > 60 goto ffcase
+    case $^S:   Line := Line+1
+                Out1($*l)
+                goto SpaceOver
+
+    default:    Column := Column+1
+                Out1(Ch)
+                return
+
+    ffcase:
+    case $*f:   Line := 0
+                Out1($*f)
+    SpaceOver:  for i := 1 to Column do Out1($*s)
+                return
+
+    case $*t:
+                { Out1($*s)
+                  Column := Column+1
+                 }
+                repeatuntil (Column&7) = 0
+                return
+
+   }
+ }
+
+and Out1(Ch) be
+{ while BufferCount ge BUFSIZE do { }
+  rh LPTBuffer|LoadPointer := Ch
+  LoadPointer := LoadPointer + 1
+  LoadPointer := LoadPointer & (BUFSIZE - 1)
+  BufferCount := BufferCount + 1
+  LPS := LPS \ #100
+ }
+
+and GetCount() := BufferCount
+
+and LPTPI() be
+{ if LPS < 0 then return	// Wait while off-line
+  LPS := LPS & not #100          // Turn off LPT interrupts
+  if BufferCount le 0 do return // Nothing else to do
+  PS := 0                        // permit other interrupts
+  { rh LPB := rh LPTBuffer|RetrievePointer
+    RetrievePointer := RetrievePointer + 1
+    RetrievePointer := RetrievePointer & (BUFSIZE - 1)
+    BufferCount := BufferCount - 1
+   }
+  repeatwhile rh LPS < 0 & BufferCount > 0
+  if BufferCount > 0 do
+  { PS := PS \ #340              // Inhibit interrupts
+    LPS := LPS \ #100            // Turn it on- more to do
+   }
+ }
+
+and CloseLPT() be
+{ WriteS(LPT,"*n*f*f*f*f*n")
+  Dobe (LPT)
+ }
+
+and NilFn() := 0
+
+static
+{ LPT:  table lv InitLPT,
+              lv NilFn,
+              lv OutCh,
+              lv NilFn,
+              lv GetCount,
+              lv NilFn,
+              lv InitLPT,
+              lv NilFn,
+              lv CloseLPT,
+              (lv NilFn) repname 6
+ }

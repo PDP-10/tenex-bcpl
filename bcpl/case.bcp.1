@@ -1,0 +1,347 @@
+
+// case is meant to make life easier for a 33 user:
+
+external
+{ write
+    run
+ }
+get "<bcpl>head"
+static
+{ jvec:     vec 20
+  infile:   nil
+  outfile:  nil
+  ch:       0
+  wd:       vec 256
+  latch1:   nil
+  latch:    nil
+  lines:    nil
+  readfile: nil                 // the conversion function
+  Terminator:   nil
+  escape:   $*a
+  RunBCPL:  nil
+  first:    true                // first time call
+ }
+manifest
+{ endstream := #32
+               capa :=
+               #101
+               capz :=
+               #132
+               smla :=
+               #141
+               smlz :=
+               #172
+  lbrace :=    #173
+               rbrace :=
+               #175
+               bar :=
+               #174
+ }
+
+let Start() be
+{ OUTPUT:=#101
+  Terminator:=0
+  latch, latch1 := false, false
+  INPUT:=#100
+  Terminator:=LastCH()
+  if Terminator ne $*s then WriteS("*nbcpl case-changer*n")
+{ RESET:
+    RunBCPL:=Terminator=$*s=>first, false
+    first:=false
+    JSYS(#147)                  // RESET
+    {getin
+      WriteS("in: ")
+      if GetFile(lv infile, 0, 0, RunBCPL=>"BCE*000", 0, #120000, 0) eq
+           true
+      then break
+      if LastCH()=$? then { HelpHim(); goto RESET }
+      if LastCH()=$^g then goto RESET
+      WriteS("*n*000")
+     }getin
+    repeat
+    test Terminator ne $*s
+    ifnot { RunBCPL, readfile := true, readlower }
+    ifso
+    { RunBCPL, readfile := false, readlower
+      escape := ask("escape character: ")
+      if escape=$*C \ escape=$*N
+      then { escape:=$*A; WriteS(OUTPUT,"Escape is *A*N") }
+      if (ask("Full Case Mode -> Escape Mode?")\#40) eq #171
+                                // lower case y
+      then { readfile := readupper; WriteS("es") }
+      if LastCH()=$! then RunBCPL:=true
+      if LastCH()=$? then { HelpHim(); goto RESET }
+      if LastCH()=$^g then goto RESET
+      BOUT(OUTPUT,$*n)
+     }
+    let d,f,e := vec 20, vec 20, vec 20
+    {getout
+      WriteS("out: ")
+      if GetFile(lv outfile, FileDetails(infile,d,f,e), f,
+                 RunBCPL=>"BCP*000",
+		 e!0="BCP"!0->"BCE*000",e,RunBCPL=>#440000, #460000,
+                 RunBCPL=>"*$",0, #100,,#101) eq true
+     then break
+      if LastCH()=$? then { HelpHim(); goto RESET }
+      if LastCH()=$^g then goto RESET
+      if RunBCPL then goto RESET
+
+                                // if he confirmed with an <esc> he
+                                //-- wants the same name
+      WriteS("*n*000")
+     }getout
+    repeat
+   }
+  repeatuntil OpenFile(lv infile,7,0,#200000)&
+              OpenFile(lv outfile , 7, 0, #100000)
+
+// ////// m a i n p r o g r a m ////////
+
+  if RunBCPL then
+  { let v:=vec 20
+    let t:=CreateOutput(jobfile("000bcp.tmp",v))
+    let s:=vec 30
+    FileToString(outfile,s)
+    WriteS(t,s)
+    BOUT(t,$*n); BOUT(t,0)      // zero byte ends file
+    EndWrite(t)
+   }
+  ch:=0
+  readfile()
+  EndRead(infile)
+  EndWrite(outfile)
+  if RunBCPL then run('<subsys>bcpl.sav',1)
+ }
+repeat
+
+and GetFile(jfn,dir,name,ext,flags,strng,io) := valof
+{gfn
+  let n:=NumbArgs()
+  if n<7 then io:=#377777,,#377777
+  if n<6 then strng:=0
+  if n<5 then { flags:=dir; dir, name, ext:= 0, 0, 0 }
+  let jfnblock:=list flags,,0,
+                     (strng=0=>#100,,#101,io),
+                     0,
+                     dir = 0 => 0,
+                     POINT(9, dir, 8),
+                     name=0=> 0,
+                     POINT(9, name, 8),
+                     ext=0=> 0,
+                     POINT(9,ext,8),
+                     0,
+                     0
+  and jvec:= vec 15
+  jvec!1:=jfnblock
+  jvec!2:=strng=0=>0,POINT(9,strng,8)
+  if JSYS(#20,jvec) = 2 then
+  { rv jfn:=#400000,,jvec!1; resultis true
+   }
+  resultis jvec!1
+ }gfn
+
+and OpenFile(stream, bytesize, mode, direction):=valof
+{openf
+  let jvec:=vec 15
+  if rv stream > -1 then resultis true
+  jvec!1:=#7777777&(rv stream)
+  jvec!2:=bytesize*#010000000000+mode*#000400000000+direction
+  if JSYS(#21,jvec) = 2 then
+  { rv stream := rv stream & #777777
+    resultis true
+   }
+
+  resultis false
+ }openf
+
+and FileDetails(jfn,d,f,e) := valof
+{ let v:=vec 40
+  let jv,jd,jf,flags:=0,POINT(7,v),jfn,#020000,,0
+                                // non-default directory print
+  JSYS(#30,lv jv)
+  ASCIZToString(v,d); jd:=POINT(7,v)
+  flags:=#001000,,0
+  JSYS(#30,lv jv)
+  ASCIZToString(v,f); jd:=POINT(7,v)
+  flags:=#000100,,0
+  JSYS(#30,lv jv)
+  ASCIZToString(v,e)
+  resultis rv d eq 0=>0,d
+ }
+
+and FileToString(jfn,s) :=valof
+{ let v:=vec 40
+  let jv:=list 0,
+               POINT(7,v),
+               jfn,
+               #021110,,1
+  JSYS(#30,jv)
+  ASCIZToString(v,s)
+  resultis s
+ }
+
+and rch() be
+{ ch:=BIN(infile)
+  if EofFlg then ch := endstream
+ }
+
+and readupper() be              // convert lowercase->uppercase with
+{ let us_false
+                                //-- escapes
+{ switchon ch into
+  { case 0:            endcase
+
+    case capa to capz: us_true  // Seen an uppercase alphabetic
+    case smla to smlz:
+                       { let i,caps := 0, true
+                         { switchon ch into
+                           { case smla to smlz: caps:=false
+                             case capa to capz: i:=i+1; wd!i:=ch
+
+                                                endcase
+                             default:           break
+                            }
+                           rch()
+                          }
+                         repeat // now there"s a word in wd!1 -- wd!i
+                         test caps
+                         ifnot for j:=1 to i do BOUTUpper(outfile,wd!j)
+                         ifso
+                         { BOUT(outfile,escape)
+                           unless i=1 do BOUT(outfile,escape)
+                           for j:=1 to i do BOUT(outfile,wd!j)
+                          }
+                         BOUT(outfile,ch)
+                                // the terminator
+                        }
+                       endcase
+
+    case lbrace:       BOUT(outfile,$[); endcase
+
+    case bar:          BOUT(outfile,$!); endcase
+
+    case rbrace:       BOUT(outfile,$]); endcase
+
+    case endstream:    unless us do WriteS("*NWarning: No Upper Case letters seen*N"); return
+
+    default:           BOUT(outfile,ch)
+                       if ch=escape then
+                       { WriteS(OUTPUT,"*nalready converted, so ")
+			 let jv_list 0,outfile,nil repname 15
+			 PBOUT($*N)
+			 let v_vec 15
+			 WriteS(FileToString(outfile,v)); WriteS(" will be deleted*N")
+			 unless JSYS(#26,jv)=2 do WriteS("Couldn't Delete*N")
+			 ; return
+                        }
+   }
+  rch()
+ }
+repeat
+}
+
+and BOUTUpper(outfile,ch) be
+test capa le ch le capz
+ifso { BOUT(outfile,escape); BOUT(outfile,ch) }
+ifnot BOUT(outfile, ch-(smla-capa))
+
+and readlower() be              // convert uppercase+escapes->lowercase
+{ let es,us,lss_false,false,false
+{ switchon ch into
+  { case smla to smlz: BOUT(outfile,ch)
+                       latch1:=false
+                       rch()
+		       lss_true
+                       loop
+
+    case capa to capz: us_true
+		       if latch \ latch1 then
+                       { BOUT(outfile,ch); latch1:=false; rch(); loop
+                        }
+                       BOUT(outfile,ch+(smla-capa))
+                       latch1:=false
+                       rch()
+                       loop
+
+    case $[:           BOUT(outfile,lbrace); rch(); loop
+
+    case $]:           BOUT(outfile,rbrace); rch(); loop
+
+                       rch()
+                       latch1:=true
+                       if ch=$*a then { latch:=true; rch(); loop }
+                       loop
+
+    case 0:            rch(); loop
+
+    case endstream:    if not us do WriteS("*NWarning: No Upper Case letters seen")
+			if not es do { WriteS("*NWarning: No "); BOUT(OUTPUT,escape); WriteS("(escape character) seen") }
+		        if lss then { WriteS((not us\not es)->" but ","*NWarning: ");  WriteS("Lower Case letters seen")}
+			if lss\ not us \ not es then PBOUT($*N)
+		       return
+
+    default:           if ch=escape then
+                       { rch()
+			 es_true
+                         latch1:=true
+                         if ch=escape then
+                         { latch:=true; rch(); loop
+                          }
+                         loop
+                        }
+                       BOUT(outfile,ch)
+                       latch1:=false
+                       latch:=false
+                       rch()
+                       loop
+   }
+ }
+repeat
+}
+
+and ask(s) := valof
+{ BOUT(OUTPUT,$*n)
+  WriteS(OUTPUT,s)
+  resultis BIN(INPUT)
+ }
+
+and LastCH():=valof
+{ bkjfn(INPUT)
+  resultis BIN(INPUT)
+ }
+
+and bkjfn(fn) be
+{ let jvec := list 0,
+                   fn,
+                   nil repname 13
+  JSYS(#42,jvec)
+ }
+
+and jobno():=valof
+{ let v:=vec 15
+  JSYS(#13,v)
+  resultis v!3
+ }
+
+and jobfile(s,v):=valof
+{ let w:=vec 30
+  let n:=jobno()
+  global
+  { Pack:       #43
+                Unpack:
+                #44
+   }
+  Unpack(s,w)
+  w!1, w!2, w!3 := n/100+$0, (n/10)rem 10+$0, (n rem 100) rem 10+$0
+  Pack(w,v)
+  resultis v
+ }
+
+and HelpHim() be
+{ let t:=FindInput("<bcpl>case.help")
+  if t=0 then { WriteS("*nno <bcpl>case.help*n"); return }
+  BOUT(OUTPUT,BIN(t)) repeatuntil EofFlg
+  BOUT(OUTPUT,$*n)
+  EndRead(t)
+ }
+

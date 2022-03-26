@@ -1,0 +1,26 @@
+
+// Clock Routines
+
+get "headio.bcp"
+get "head.bcp"
+
+manifest
+{ LKS : rv #777546
+  TicksPerSecond:60
+}
+
+static
+{ Clock : nil
+  Ticks : nil
+}
+
+let CLKPI() be
+{ Ticks _ Ticks - 1
+  if Ticks le 0 then
+  { Ticks _ TicksPerSecond; Clock _ Clock + 1}
+}
+
+and InitClock() be
+{ Clock, Ticks _ 0, TicksPerSecond
+  LKS _ #100
+}

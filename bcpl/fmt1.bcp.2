@@ -1,0 +1,343 @@
+
+get "headfmt.bcp"
+
+static                          // Style variables
+{ IndentStep:      2            // Per level indentation
+  CondSign:        $=           // Replace -> with =>
+  NewLinePerBrace: false        // Start a new line for each block
+  MinFoldCount:    0            // Start value for fold count
+  PageWidth:       72           // Page width
+  COMCOL:          32           // Comment Column
+  EndBlockIndent:  1            // Where to place close brace
+  CFFactor:        10           // Lines per comment fit failure
+  LFFactor:        10           // Lines per label fit failure
+  MaxCommentSlip:  0            // Maximum amount to allow comments to
+                                //-- slip right
+  MinCommentSep:   2            // Minimum separation before comments
+  MaxCaseLM:       20           // Max left margin still allowing large
+                                //-- undents
+}
+
+static                          // Savable variables
+{ LeftMargin:         nil       // Indentation level
+  Needs:              nil       // Need bits for DO, OR, THEN etc.
+  BlankLine:          nil       // -1 -> need a blank, 1 just had a
+                                //-- blank
+  TotalShortening:    nil       // Maximum line shortening possible by
+                                //-- backup
+  ThisShortening:     nil       // Shortening possible by current
+                                //-- backup
+  MinFold:            nil       // Line may be shortened by folding
+  OneLineFlag:        nil       // Entire section must fit one line
+  InDecl:             nil       // Processing a declaration block
+                                //-- (static etc.)
+  InCase:             nil       // Processing switchon/selecton/brancon
+                                //-- block
+  DeclSeparator:      nil       // The separator to use for
+                                //-- declarations
+  LastBackup:         nil       // Last saved frame base
+  CaseDeclUndent:     nil       // Amount to undent case/decl labels
+  LastShortener:      nil       // Last place to backup for shortening
+                                //-- lines
+  CommentColumn:      nil       // Current column for comments
+  Indent:             nil       // Amount to indent this line
+  CommentFitFailures: nil       // Count of Failures to fit a comment
+  LabelFitFailures:   vec MAXLFF   // Count of failures to fit a
+                                   //-- case/decl label
+  Ch:                 nil       // Last character read
+  InputLines:         nil       // Count of actual input lines
+  OutputLines:        nil       // Count of actual output lines
+  NeededBlock:        nil       // Type of next block
+  LastLabel:          nil       // Remember where last case label ends
+  StartSyllable:      nil       // Separator seen, look for reserved
+                                //-- words
+  MaxColumn:          nil       // Backup if line length exceeds this
+}
+
+static                          // Non-savable variables
+{ StyleFileName: vec 20
+  EofCount:      nil            // Count of EOF's encountered
+  InFile:        nil            // Input JFN
+  OutFile:       nil            // Output JFN
+  Line:          vec MAXLINE    // The line buffer
+  SaveThings:    nil            // A list of things to save at each
+                                //-- ErrorSet
+  BackupLabel:   nil            // Label for Backup to jump to
+  ChBuffer:      vec CHBUFSIZ
+  TopPtr:        nil            // Last character in ChBuffer
+  ScnPtr:        nil            // Current character in ChBuffer
+  BotPtr:        nil            // Bottom character in ChBuffer
+  InputTotal:    nil            // Count of total input lines with
+                                //-- backup
+  OutputTotal:   nil            // Count of total output lines with
+                                //-- backup
+  NeededShortening:
+                 nil            // Communication cell Backup to
+                                //-- ErrorSet
+  BackupCount:   nil            // Count of number of backups
+}
+
+let Start() be
+{ LeftMargin _ 0
+  Needs _ 0
+  BlankLine _ 0
+  TotalShortening _ 0
+  ThisShortening _ 0
+  MinFold _ 0
+  OneLineFlag _ false
+  InDecl _ false
+  InCase _ false
+  DeclSeparator _ $_
+  LastBackup _ 0
+  CaseDeclUndent _ 0
+  LastShortener _ 0
+  CommentColumn _ COMCOL
+  Indent _ 0
+  CommentFitFailures _ 0
+  Line|0 _ 0
+  InputLines _ 0
+  OutputLines _ 0
+  NeededBlock _ 0
+  LastLabel _ 0
+  StartSyllable _ true
+  MaxColumn _ PageWidth
+  let x _ list 24,
+               lv LeftMargin,
+               lv Needs,
+               lv BlankLine,
+               lv TotalShortening,
+               lv ThisShortening,
+               lv MinFold,
+               lv OneLineFlag,
+               lv InDecl,
+               lv InCase,
+               lv DeclSeparator,
+               lv LastBackup,
+               lv CaseDeclUndent,
+               lv LastShortener,
+               lv CommentColumn,
+               lv Indent,
+               lv CommentFitFailures,
+               lv LabelFitFailures,
+               lv Ch,
+               lv InputLines,
+               lv OutputLines,
+               lv NeededBlock,
+               lv LastLabel,
+               lv StartSyllable,
+               lv MaxColumn
+  SaveThings _ x
+  EofCount _ 0
+  InputTotal, OutputTotal _ 0, 0
+  BackupCount _ 0
+  TopPtr, ScnPtr, BotPtr _ 0, 0, 0
+  OUTPUT _ #101
+  INPUT _ #100
+  WriteS(OUTPUT,
+         "*nBCPL File Formatter -- R. S. Tomlinson, 10 Aug 73*n")
+  let Ptr _ POINT(9, StyleFileName, 8)
+  and Directory _ LoginDirectory()
+  and Jvec _ vec 15
+  IDPB($<, lv Ptr)
+  Jvec|1 _ Ptr
+  Jvec|2 _ LoginDirectory()
+  JSYS(#41, Jvec, Jvec)
+  Ptr _ Jvec|1
+  let Name _ ">[-BCPL-FORMATTER-STYLE-]*000"
+  for i _ 1 to Name>>STRING.N do IDPB(Name>>STRING.C^i, lv Ptr)
+  let Chc _ 0
+  Chc _ Chc + 1
+  repeatuntil StyleFileName>>STRING.C^Chc = 0
+  StyleFileName>>STRING.N _ Chc
+  if GetFileName(lv InFile, 0, 0, 0, #100000, StyleFileName) eq true
+  then
+  { OpenFile(lv InFile, 7, 0, #200000)
+    SetStyle(InFile)
+  }
+  CLOSF(rhz InFile)
+  { JSYS(#147)
+  GetIn:
+    WriteS(OUTPUT, "Input file: ")
+    if GetFileName(lv InFile, 0, 0, "BCP", #120000, 0) ne true then
+    { ESOUT("*n*000"); goto GetIn
+    }
+  GetOut:
+    WriteS(OUTPUT, "Output file: ")
+    if GetFileName(lv OutFile, 0, 0, "BCP", #460000, 0) ne true then
+    { ESOUT("*n*000"); goto GetOut
+    }
+  }
+  repeatuntil OpenFile(lv InFile, 7, 0, #200000) &
+              OpenFile(lv OutFile, 7, 0, #100000)
+  bkjfn(INPUT)
+  if Readch(INPUT) = $, then
+  { Writech(OUTPUT, $*n)
+    SetStyle(INPUT)
+  }
+  let CPU, Connect _ CPUTime(), ConnectTime()
+  ReadLines($*e)
+  EndRead(InFile)
+  let FileLength _ rfptr(OutFile)
+  CLOSF(#400000,,OutFile)
+  Jvec|1 _ #12,,OutFile
+  Jvec|2 _ #777777777777
+  Jvec|3 _ FileLength
+  JSYS(#64, Jvec)
+  WriteS(OUTPUT, "Used ")
+  WriteN(OUTPUT, CPUTime() - CPU)
+  WriteS(OUTPUT, " ms in ")
+  WriteN(OUTPUT, (ConnectTime() + 500 - Connect)/1000)
+  WriteS(OUTPUT, " sec.*n")
+  WriteN(OUTPUT, OutputLines)
+  WriteS(OUTPUT, " output lines*n")
+  WriteN(OUTPUT, BackupCount)
+  WriteS(OUTPUT, " backups*n")
+  finish
+}
+
+// File functions
+
+// Get JFN with defaults
+
+and GetFileName(JFN, Dir, Name, Ext, Flags, Strng) _ valof
+{gfn
+  let JFNBlock _ list Flags,,0,
+                      (Strng=0 => #100,,#101, #377777,,#377777),
+                      0,
+                      Dir eq 0 => 0,
+                      POINT(9, Dir, 8),
+                      Name eq 0 => 0,
+                      POINT(9, Name, 8),
+                      Ext eq 0 => 0,
+                      POINT(9, Ext, 8),
+                      0,
+                      0
+  and Jvec _ vec 15
+  Jvec|1 _ JFNBlock
+  Jvec|2 _ Strng eq 0 => 0, POINT(9, Strng, 8)
+  if JSYS(#20, Jvec) eq 2 then
+  { rv JFN _ #400000,,Jvec|1; resultis true
+  }
+  resultis Jvec|1
+}gfn
+
+// Open file
+
+and OpenFile(Stream, ByteSize, Mode, Direction) _ valof
+{opnf
+  let Jvec _ vec 15
+  if rv Stream > -1 then resultis true
+
+                                // Already open
+  Jvec|1 _ #777777&(rv Stream)
+  Jvec|2 _ ByteSize*#010000000000 + Mode*#000400000000 + Direction
+  if JSYS(#21, Jvec) eq 2 then
+  { rv Stream _ rv Stream & #777777
+    resultis true
+  }
+  resultis false
+}opnf
+
+and ESOUT(Str) be
+{ let Jvec _ vec 15
+  Jvec|1 _ POINT(9, Str, 8)
+  JSYS(#313, Jvec)
+}
+
+and LoginDirectory() _ valof
+{ let Jvec _ vec 15
+  JSYS(#13, Jvec, Jvec)
+  resultis Jvec|1
+}
+
+and CPUTime() _ valof
+{ let Jvec _ vec 15
+  Jvec|1 _ #400000
+  JSYS(#15, Jvec, Jvec)
+  resultis Jvec|1
+}
+
+and ConnectTime() _ valof
+{ let Jvec _ vec 15
+  JSYS(#14, Jvec, Jvec)
+  resultis Jvec|1
+}
+
+and SetStyle(File) be
+{ let Buff _ vec 10
+  and Term _ nil
+  and StyleVars _
+    list 9,
+         lv PageWidth,,"Page Width ",
+         lv IndentStep,,"Indent per level: ",
+         lv COMCOL,,"Comment column ",
+         lv EndBlockIndent,,"Close brace indentation ",
+         lv NewLinePerBrace,,"New line for each open brace ",
+         lv CFFactor,,"Comment fitting factor ",
+         lv LFFactor,,"Label fitting factor ",
+         lv MaxCommentSlip,,"Maximum right slip for comments ",
+         lv MinCommentSep,,"Minimum separation before comments "
+  for i _
+        1 to StyleVars|0
+  do
+  { if File = INPUT then
+    { WriteS(OUTPUT, rhz StyleVars|i)
+      Writech(OUTPUT, $()
+      WriteN(rv lhz StyleVars|i)
+      WriteS(OUTPUT, "): ")
+    }
+    ReadWord(File, Buff, lv Term)
+    if Term = $*c then BIN(File)
+    unless (Term = $*n \ Term = $*c) & valof
+    { for i _
+            1 to Buff>>STRING.N
+      do unless $0 le Buff>>STRING.C^i le $9 do resultis false
+      resultis true
+    }
+    do test File = INPUT
+       ifso { ESOUT("*n"); loop }  // Try again
+       ifnot { WriteS(OUTPUT, "Style file has bad format*n"); return }
+    if Buff>>STRING.N ne 0 then rv lhz StyleVars|i _ TxtToInt(Buff)
+  }
+  if File = INPUT then
+  {
+    { WriteS(OUTPUT, "Save on style file? ")
+      switchon YesNo() into
+      { case 1:     ESOUT(" Y or N please*n")
+                    loop
+
+        case true:
+                    { let File _ CreateOutput(StyleFileName)
+                      for i _ 1 to StyleVars|0 do
+                      { WriteN(File, rv lhz StyleVars|i)
+                        WriteS(File, "*c*l")
+                      }
+                      CLOSF(File)
+                    }
+
+        case false: break
+      }
+    }
+    repeat
+  }
+}
+
+and YesNo() _ valof
+{ switchon Readch(INPUT) into
+  { case $Y:
+    case $y:  WriteS(OUTPUT, "es*n")
+              resultis true
+
+    case $N:
+    case $n:  WriteS(OUTPUT, "o*n")
+              resultis false
+
+    default:  resultis 1
+  }
+}
+
+and bkjfn(File) be
+{ let Jvec _ vec 15
+  Jvec|1 _ File
+  JSYS(#42, Jvec)
+}

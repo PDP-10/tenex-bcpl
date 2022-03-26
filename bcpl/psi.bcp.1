@@ -1,0 +1,123 @@
+//<WOLF>PSI.BCP;18    12-JUN-73 22:48:59	EDIT BY WOLF
+//<WOLF>PSI.BCP;17    10-JUN-73 21:43:54	EDIT BY WOLF
+//  fixed bug in IsPsiChEnb
+//<WOLF>PSI.BCP;16    10-JUN-73 16:19:33	EDIT BY WOLF
+//<WOLF>PSI.BCP;15    10-JUN-73 14:57:28	EDIT BY WOLF
+//<WOLF>PSI.BCP;14     9-JUN-73 22:03:53	EDIT BY WOLF
+//<WOLF>PSI.BCP;13     9-JUN-73 21:31:46	EDIT BY WOLF
+//  appropriate functions can have optional fork handle as
+//   first argument
+
+//PSI functions for BCPL
+
+get "<BCPL>PSIHEAD"
+get "<BCPL>HEAD"
+get "<BCPL>JSHEAD"
+get "<BCPL>UTILHEAD"
+
+manifest { thisfork_#400000}
+
+let PSISetCh(fork,lev,chn,subr) be
+{ unless NumbArgs()=4 do
+  { subr_chn
+    chn_lev
+    lev_fork
+    fork_thisfork
+  }
+  psichn|chn_lev,,(4*chn)+lv(psich0)
+  fntbl|chn_subr
+  let v_vec 16
+  v|1_fork
+  v|2_setbit(chn)
+  JSYS(jsAIC,v)
+}
+
+and setbit(bitnum)_(#400000,,0) rshift bitnum
+
+and PSIOn(fork) be
+{ let v_vec 16
+  v|1_(NumbArgs()=0 -> thisfork,fork)
+  v|2_lv psilev|1,,lv psichn|0
+  JSYS(jsSIR,v)
+  JSYS(jsEIR,v)
+}
+
+and PSIOff(fork) be
+{ let v_vec 16
+  v|1_(NumbArgs()=0 -> thisfork,fork)
+  JSYS(jsDIR,v)
+}
+
+and IsPSIOn(fork)_valof
+{ let v_vec 16
+  v|1_(NumbArgs()=0 -> thisfork,fork)
+  resultis JSYS(jsSKPIR,v)=2
+}
+
+and PSIChDis(ch1,nil repname 35) be foo(NumbArgs(),(lv ch1)-1,jsDIC)
+
+and PSIChEnb(ch1,nil repname 35) be foo(NumbArgs(),(lv ch1)-1,jsAIC)
+
+and PSIChInit(ch1,nil repname 35) be foo(NumbArgs(),(lv ch1)-1,jsIIC)
+
+and foo(nargs,arg,jsys) be
+{ let ac_vec 16
+  let ch1_nil
+  test isforkh(arg|1)
+    ifso
+    { ac|1_arg|1
+      ch1_2}
+    ifnot
+    { ac|1_thisfork
+      ch1_1}
+  ac|2_0
+  for i_ch1 to nargs do ac|2_ac|2\setbit(arg|i)
+  JSYS(jsys,ac)
+}
+
+and isforkh(x)_(-5 le x le -1)\(#400000 le x le #400100)
+
+and FreeTICh()_valof
+{ for i_0 to 5 do if psichn|i=0 do resultis i
+  for i_24 to 29 do if psichn|i=0 do resultis i
+  Help("*nNo free terminal interrupt PSI channel*n")
+}
+
+and ATI(CHAR,ch) be
+{ let v_vec 16
+  v|1_termcode(CHAR),,ch
+  JSYS(jsATI,v)
+}
+
+and termcode(CHAR)_selecton CHAR into
+{ case 0 to #33: CHAR
+  case #177: 28
+  case $*s: 29
+  case #200: 30
+  default: valof
+  { WriteS("Illegal terminal interrupt character = ")
+    WriteOct(CHAR)
+    Writech($*n)
+    finish
+  }
+}
+
+and PSIClear() be JSYS(jsCIS)
+
+and DTI(CHAR) be
+{ let v_vec 16
+  v|1_termcode(CHAR)
+  JSYS(jsDTI,v)
+}
+
+and IsPSIChEnb(fork,ch)_valof
+{ let v_vec 16
+  test NumbArgs()=1
+    ifso
+    { v|1_thisfork
+      ch_fork}
+    ifnot v|1_fork
+  JSYS(jsRCM,v)
+  resultis ((v|1)&setbit(ch)) ne 0
+}
+

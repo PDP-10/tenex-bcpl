@@ -1,0 +1,305 @@
+
+// BCPL Compiler -- Part 3 of CAE.
+
+// Rdef  Read a definition, returning the node thus produced.
+// Rcom  Read a command.
+// Rselect  Read a switchon block.
+
+get "<xbcpl>headcae"
+get "<bcpl>head"
+
+let Rdef() := valof
+{ let A, B, Op := 0, nil, nil
+  and Thisline := LinePtr()
+  let N := Rnamelist()
+  switchon Symb into            // What comes after the name list?
+  { case RBRA:                  // A name.  It is a function or routine
+                                //-- definition.
+      Nextsymb()
+      unless H1|N eq NAME do CAEreport(40)
+                                // It is necessary that the name list
+                                //-- was a name.
+      if Symb eq NAME \ Symb eq NIL do A := Rnamelist()
+                                       // Formal parameters.
+      unless Symb eq RKET do CAEreport(41)
+      Nextsymb()
+      if Symb eq BE do          // It"s a routine definition.
+      { Nextsymb()
+        B := Rcom(Rcom)
+        A := List5(RTDEF, N, A, B, 0)
+                                // Last cell is used in Trans as a
+                                //-- temp.
+        endcase
+       }
+      if Symb eq ASS do         // It"s a function definition.
+      { Nextsymb()
+        B := Rexp(0)
+        A := List5(FNDEF, N, A, B, 0)
+                                // Last cell is used in Trans as a
+                                //-- temp.
+        endcase
+       }
+      CAEreport(42)
+      A := List4(VALDEF, N, List2(NUMBER, 0), 0)
+                                // Extra cell to hold count in Trans.
+      endcase
+
+    default:
+      CAEreport(44)
+
+    case ASS:
+      Nextsymb()
+      A := Rexp(0)
+      A := List4(VALDEF, N, A, 0)
+                                // Extra cell to hold count in Trans.
+
+   }
+
+  A := List3(LINE, Thisline, A)
+  if Symb eq AND do
+  { Nextsymb()
+    if Symb eq LET do Nextsymb()
+    B := Rdef()
+    resultis List3(AND, A, B)
+   }
+  resultis A
+ }
+
+and Rcom(Nextfn) := valof
+{ let A, B, C, Op := nil, nil, nil, nil
+  let Thisline := LinePtr()
+
+  switchon Symb into
+  { default:          resultis 0
+
+    case RNAME:
+    case ASCIZCONST:
+    case LHZ:
+    case RHZ:
+    case Q1Z:
+    case Q2Z:
+    case Q3Z:
+    case Q4Z:
+    case NAME:
+    case NUMBER:
+    case STRINGCONST:
+    case CHARCONST:
+    case FPLUS:
+    case FMINUS:
+    case LH:
+    case RH:
+    case Q1:
+    case Q2:
+    case Q3:
+    case Q4:
+    case NUMBARGS:
+    case LEFTSIDE:
+    case NOT:
+    case SELECTON:
+    case TRUE:
+    case FALSE:
+    case LV:
+    case RV:
+    case RBRA:
+    case VALOF:
+    case PLUS:
+    case MINUS:
+    case CSIZE:
+    case SIZE:                  // These are all the symbols which can
+                                //-- start an expression.
+                      A := Rexp(0)
+                      if Symb eq ASS do
+                      { Nextsymb()
+                        B := Rexp(0)
+                        A := List3(ASS, A, B)
+                        endcase
+                       }
+                      if Symb eq COLON do
+                      { unless H1|A eq NAME do CAEreport(50)
+                        Nextsymb()
+                        B := Nextfn(Nextfn)
+                        A := List4(COLON, A, B, 0)
+                                // Last cell is used in Trans to hold a
+                                //-- label.
+                        endcase
+                       }
+                      if H1|A eq FNAP do { H1|A := RTAP; endcase }
+                      CAEreport(51)
+                      A := List3(ASS, ERRORNAME, A)
+                      endcase
+
+    case GOTO:
+    case RESULTIS:    Op := Symb
+                      Nextsymb()
+                      A := Rexp(0)
+                      A := List2(Op, A)
+                      endcase
+
+    case IF:
+    case UNLESS:
+    case WHILE:
+    case UNTIL:       Op := Symb
+                      Nextsymb()
+                      A := Rexp(0)
+                      if Op eq UNTIL \ Op eq WHILE
+                      do A := List3(LINE, Thisline, A)
+                      unless Symb eq DO do CAEreport(52)
+                      Nextsymb()
+                      B := Rcom(Rcom)
+                      A := List3(Op, A, B)
+                      endcase
+
+    case TEST:        Nextsymb()
+                      A := Rexp(0)
+                      test Symb eq IFNOT
+                      then
+                      { Nextsymb()
+                        C := Rcom(Rcom)
+                        unless Symb eq IFSO do CAEreport(55)
+                        Nextsymb()
+                        B := Rcom(Rcom)
+                       }
+                      or
+                      { unless Symb eq DO \ Symb eq IFSO
+                        do CAEreport(53)
+                        Nextsymb()
+                        B := Rcom(Rcom)
+                        unless Symb eq OR \ Symb eq IFNOT
+                        do CAEreport(54)
+                        Nextsymb()
+                        C := Rcom(Rcom)
+                       }
+                      A := List4(TEST, A, B, C)
+                      endcase
+
+    case FOR:
+                      { Nextsymb()
+                        test Symb eq NAME
+                        then A := List2(NAME, V|0)
+                        or { CAEreport(64); A := ERRORNAME }
+                        Nextsymb()
+                        unless Symb eq ASS do CAEreport(57)
+                        Nextsymb()
+                        let L, U, S := nil, nil, 0
+                                // Lower limit, upper limit, step size.
+                        L := Rexp(0)
+                        test Symb eq BY
+                        then
+                        { Nextsymb()
+                          S := Rexp(0)
+                          unless Symb eq TO do CAEreport(58)
+                          Nextsymb()
+                          U := Rexp(0)
+                         }
+                        or
+                        { unless Symb eq TO do CAEreport(58)
+                          Nextsymb()
+                          U := Rexp(0)
+                          if Symb eq BY do
+                          { Nextsymb(); S := Rexp(0)
+                           }
+                         }
+                        unless Symb eq DO do CAEreport(59)
+                        Nextsymb()
+                        B := Rcom(Rcom)
+                        A := List6(FOR, A, L, U, S, B)
+                        endcase
+                       }
+
+    case ENDCASE:
+    case LOOP:
+    case BREAK:
+    case FINISH:
+    case ABORT:
+    case RETURN:      A := List1(Symb)
+                      Nextsymb()
+                      endcase
+
+    case SWITCHON:
+    case BRANCHON:    Op := Symb
+                      Nextsymb()
+                      A := List3(LINE, Thisline, Rexp(0))
+                      unless Symb eq INTO do CAEreport(60)
+                      Nextsymb()
+                      B := Rblock()
+                      A := List3(Op, A, B)
+                      endcase
+
+    case CASE:        Nextsymb()
+                      A := Rexp(0)
+                      test Symb eq TO
+                                // Case label with limits?
+                      then { Nextsymb(); C := Rexp(0) }
+                      or C := 0
+                      unless Symb eq COLON do CAEreport(61)
+                      Nextsymb()
+                      B := Nextfn(Nextfn)
+                      A :=
+                        C eq 0 => List4(CASE, A, B, Thisline),
+                        List5(CASETO, A, C, B, Thisline)
+                      endcase
+
+    case DEFAULT:     Nextsymb()
+                      unless Symb eq COLON do CAEreport(62)
+                      Nextsymb()
+                      A := Nextfn(Nextfn)
+                      A := List2(DEFAULT, A)
+                      endcase
+
+    case SECTBRA:     A := Rblock()
+   }
+
+L:
+  switchon Symb into
+  { default:          resultis List3(LINE, Thisline, A)
+
+    case REPEAT:      Nextsymb()
+                      A := List2(REPEAT, A)
+                      goto L
+
+    case REPEATWHILE:
+    case REPEATUNTIL:
+                      { let LP := LinePtr()
+                        Op := Symb
+                        Nextsymb()
+                        B := Rexp(0)
+                        B := List3(LINE, LP, B)
+                        A := List3(Op, A, B)
+                        goto L
+                       }
+   }
+ }
+
+and Rselect(ExpOK) := valof
+{ let a, b := nil, nil
+  let ThisLine := LinePtr()
+  if Symb eq DEFAULT do
+  { Nextsymb()
+    unless Symb eq COLON do CAEreport(62)
+    Nextsymb()
+    a := Rselect(true)
+    resultis List3(LINE, ThisLine, List2(DEFAULT, a))
+   }
+  if Symb eq CASE do
+  { let c := 0
+    Nextsymb()
+    a := Rexp(0)
+    if Symb eq TO do { Nextsymb(); c := Rexp(0) }
+                                // Case label with limits.
+    unless Symb eq COLON do CAEreport(61)
+    Nextsymb()
+    b := Rselect(true)
+    a :=
+      c eq 0 => List4(CASE, a, b, ThisLine),
+      List5(CASETO, a, c, b, ThisLine)
+    resultis List3(LINE, ThisLine, a)
+   }
+  unless ExpOK do CAEreport(68)
+  a := Rexp(0)
+  a := List2(RESULTIS, a)
+  unless Symb eq SEMICOLON resultis List3(LINE, ThisLine, a)
+  Nextsymb()
+  b := Rselect(false)
+  a := List3(SEQ, a, b)
+  resultis List3(LINE, ThisLine, a)
+ }

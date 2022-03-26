@@ -1,0 +1,160 @@
+
+// Declarations for the BCPL Compiler -- Trans.
+
+get "<XBCPL>headbcpl"           // Compiler declarations.
+get "<XBCPL>headtrncon"         // Manifests for AE-tree nodes and
+                                //-- OCODE items.
+
+manifest
+{ BlockA  := 0
+  BlockB  := 1
+  IntExt  := 3
+ }
+
+global
+{ ERRORNAME:        #400        // copy of entry in HEADCAE.BCP
+
+// TRN0 statics
+
+  SSP:              #720
+  Dvec:             #610
+  DvecS:            #611
+  DvecE:            #612
+  DvecP:            #613
+  PDRMAXSSP:        #721
+  CURFNM:           #722
+  Casetable:        #616
+  CaseP:            #620
+  ZERONODE:         #621
+  RoutineBody:      #622
+  FunctionBody:     #623
+  ValofBlock:       #624
+  SwitchBlock:      #625
+  RepeatBlock:      #626
+  Breaklabel:       #627
+  Resultlabel:      #630
+  Defaultlabel:     #631
+  Endcaselabel:     #632
+  Looplabel:        #633
+  VecSSP:           #634
+
+// TRN6 statics
+
+  Constant:         #635
+
+// TRN7 statics
+
+  BlockIn:          #636
+  BlockWanted:      #637
+
+// TRN0 routines
+
+  TransReport:      #640
+  EnterSymbol:      #641
+  EnterEnd:         #642
+  SaveStaticItem:   #643
+
+// TRN1 routine
+
+  Trans:            #644
+
+// TRN2 routines
+
+  TransLET:         #645        // TRN2.B
+  DeclStat:         #646
+  EnterExt:         #647
+  DeclExtList:      #650        // TRN2.B
+  AddName:          #651
+
+// /////
+// Hand coded in HANDCD.MAC
+
+  CellWithName:     #652
+  CheckDistinct:    #653
+
+// /////////
+
+  ListLength:       #654
+
+// TRN3 routines
+
+  Decllabels:       #655
+  Jumpcond:         #656
+  Loadlist:         #657
+
+// TRN4 routines
+
+  Transswitch:      #660
+  Assign:           #661
+
+// TRN5 routines
+
+  Load:             #662
+  LoadLV:           #663
+
+// TRN6 routines
+
+  EvalConst:        #664
+  Lookat:           #665
+
+// TRN7 routines
+
+  Pures:            #666
+  Impures:          #667
+  Complab:          #670
+  Compentry:        #671
+  Compdatalab:      #672
+  Compjump:         #673
+  Out1:             #674
+  Out2:             #675
+  Out2P:            #676
+  Out3P:            #677
+  Out1C:            #700
+  OutN:             #701
+  OutL:             #702
+  OutC:             #703
+
+// TRN8 routines
+
+  DoQualName:       #704
+  EvalSize:         #705
+
+// TRN9 routines
+
+  TransStructDecl:  #706
+ }
+
+manifest                        // Types for items in Dvec
+{ LOCAL  := 1001
+  LABEL  := 1002
+ }
+
+structure
+{ QN                            // The datum returned by DoQualName.
+  { W bit 6                     // Width.
+    T bit 2                     // Access type.
+    M bit 2                     // Mode of loaded value.
+    N bitn 26                   // Numeric part of the offset.
+   }
+ }
+
+manifest                        // Various parameters.
+{ DvecN  :=      2              // Length of a Dvec entry.
+  CaseN  :=      3              // ditto case table.
+
+// Sizes of various tables.
+
+  DvecT  :=      1000 * DvecN   // Dynamic names.
+  CaseT  :=      CaseMax * CaseN
+                                // Case table.
+  Savespacesize  :=
+                 2
+  StringMaxOb  :=
+                 511
+
+// object machine parameters
+
+  ByteSizeOb  := 9
+  WordSizeOb  := 36
+ }
+

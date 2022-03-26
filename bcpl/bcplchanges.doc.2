@@ -1,0 +1,30 @@
+                   BCPL Changes -- 7/5/74
+                        Paul Rovner
+
+1.  New :: commands are "request",  "require",  and  "ifdebug"..   The
+   first  two  should  be  followed  by a list of rel file names to be
+   treated as libraries and searched  (if  REQUEST)  or  automatically
+   loaded  with  this rel file (if REQUIRE).  File names may specify a
+   TENEX directory in the normal (<foo>) way.   The  "ifdebug"  pseudo
+   command will cause the rest of the source line to be ignored by the
+   compiler if the compilation is NOT done with the (new) /d  compiler
+   switch.   Otherwise,  (i.e.  if the /d switch is given) the line of
+   source code is compiled.  /d stands for "DEBUG", and allows a  user
+   to  specify  parts  of  his code which are for program development,
+   when efficiency is less important than getting the program to work.
+   Once  the  program works, these "extra" parts of the program may be
+   trimmed out of the production version by  just  not  using  the  /d
+   compiler switch.
+
+2.  More globals: Users may define global  numbers  between  #400  and
+   #1377
+
+3.  More names: Space for user defined names was increased.
+
+4.  New unary operator: "csize"
+   This is like "size", the operator that returns the number  of  bits
+   in  a structure.  The difference is that "csize" returns the number
+   of "address units" in a structure...on TENEX, that is the number of
+   machine  words.   "csize" is initially unreserved ; the "::reserve"
+   pseudo command is needed if you want to use "csize".  
+

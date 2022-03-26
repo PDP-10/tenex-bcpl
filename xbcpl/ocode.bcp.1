@@ -1,0 +1,325 @@
+//            OCODE -- Convert numeric OCODE to printable form.
+
+//  Written by Arthur Evans, Jr., on February 20, 1970.
+
+//  Executing (from bt) the command
+//                ocode name option(s)
+//  causes the file NAME, assumed to contain numeric BCPL ocode, to be read and converted
+//  to alphabetic form.  The result is printed on the xerox.  If the last two characters of NAME are
+//  other than ".o", these two characters are concatenated onto the end of it.
+
+//  Options are as follows..
+//	scope	output is to the storage scope.
+//	xerox	output is to the xerox.  (This is the default.)
+//	file	output is to the file "name.ocode"
+//	debug	add debugging information to the output file.
+//  Any other option is commented on, and the run is aborted.  Only the first character of each
+//  option is looked at, and the options may be in either order.
+
+//  This program uses the file OCODE.T.B produced by NPR.
+
+//  To load...   ocode.l
+
+manifest { MaxNum _ #1777 }  // Print numerics greater than this in both decimal and octal.
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+get "<bcpl>head"	// BCPL library declarations
+get "<bcpl>utilhead"
+
+
+//   The following vector is used in WDS and in WO.
+static { Ch_0
+   V _ table nil, $1, $2, $3, $4, $5, $6, $7, $8, $9 
+   }
+//   Its first element is altered for leading zeros.
+
+let Start() be  // It all starts here...
+ {  let Name _ vec 30  // The place to put the file name.
+    static { Debug _ false }
+   INPUT_FindInput(0)
+      OUTPUT_CreateOutput(0)
+      WriteS("OCODE file: ")
+      ReadWord(Name)
+      
+     { 	let t _ nil
+	// Open the input file.
+	let u, v _ vec 50, vec 50
+	Unpackstring(Name, u)  // Unpack the name, so we can look at it.
+	let n _ u|0  // Number of characters in it.
+	unless (u|(n-1) eq $.) & (u|n eq $o) do  // Check that the last 2 characters are ".o".
+	 {  n _ n+2; u|0, u|(n-1), u|n _ n, $., $o; Packstring(u, Name)  }
+	INPUT _ FindInput(Name,9)  // Open the input file.
+	// create "name.ocode"
+	 {  u|(n+1), u|(n+2), u|(n+3), u|(n+4), u|0 _ $c, $o, $d, $e, n+4
+	    Packstring(u, Name)
+	  }
+	OUTPUT _ CreateOutput(Name)  // Open the output file.
+	WS("*nOCODE for ", Name, "*n*n*n", 0)  // Put a title on the output.
+      }
+
+    let n _ nil   //  A useful temp in what follows.
+    let NL() be   //  This routine prints a new line, with possible debug stuff too.
+     {  W($*n); unless Debug return
+//  THIS CODE IS DEPENDENT ON THE STREAM FORMAT.
+	let T _ INPUT|3		//  Next character pointer.
+	WO(lh T, 6, $*s)	//  Word.
+	WO(rh T, 4, $*s)	//  Quarter
+	W($*t)
+      }
+
+    // Now do all of the work ...  Repeat the rest of the program forever.
+     {  R()  // Read the next ocode item.
+	let x _ Getop(Ch)  // Process it.
+	let Op _ rh x
+	switchon lh x into  // Switch on its type.
+    
+	 {  case 0:  // Item has no parameter.
+		NL(); WS("*t", Op, 0); endcase
+    
+	    case 1:  // Item has a numeric parameter.
+		NL(); WS("*t", Op, "*t", 0)
+		n _ ReadNM(); WriteN(n)
+		if (n > MaxNum) \ (n < -MaxNum) do { W($*t); WriteOct(n) }
+		endcase
+    
+	    case 2:  // Item has a label parameter.
+		NL(); WS("*t", Op, "*tL", 0); WL(); endcase
+    
+	    case 3:  // Item is LAB or DATALAB.
+		W($*n); NL(); W($L); WL(); WS("*t", Op, 0); endcase
+    
+	    case 4:  // Item is LSTR.
+		NL(); WriteS("*tLSTR*t*"")
+		MoveString(ReadNM())  // Process the string.
+		W($*")
+		endcase
+    
+	    case 5:  // Item is ENTRY, INT, EXT or STRINGCONST.
+		if Op|0 eq "ENTRY"|0 do W($*n)
+		n _ ReadNM()  // Number of characters in the entry name.
+		NL(); W($L); WL(); WS("*t", Op, "*t", 0)
+		MoveString(n)
+		endcase
+    
+	    case 6:  // Item is SWITCHON.
+		n _ ReadNM()  // Number of items in the switch.
+		NL(); WriteS("*tSWITCHON*t"); WriteN(n); WriteS("*tL"); WL()
+		for k _ 1 to n do { NL(); W($*t); WN(); WriteS("*tL"); WL() }
+		endcase
+    
+	    case 7:  // Item is END.
+		EndRead(INPUT)
+		NL(); WriteS("*tEND*n")
+		EndWrite(OUTPUT)
+		finish
+    
+	    case 8:  // Item is BLOCK.
+		R()  // Read its parameter.  It will be 0 or 1.
+		W($*n); NL(); WS("*t", Op, Ch eq 0 => "*tA", "*tB", 0)
+		endcase
+    
+	    case 9:  //  Item takes a 1-byte operand.
+		NL(); WS("*t", Op, "*t", 0); R(); WriteN(Ch)
+		endcase
+    
+	    case 10:  //  Item is SPC, taking a width and a number.
+		NL(); WriteS("*tSPC*t"); R(); WriteN(Ch); W($*t); WN()
+		endcase
+    
+	    case 11:  //  Item is SLC, taking a width and a label.
+		NL(); WriteS("*tSLC*t"); R(); WriteN(Ch); WriteS("*tL"); WL()
+		endcase
+    
+	    case 12:   //  LC -- load a character constant.
+		NL(); WriteS("*tLC*t$")
+		R(); R(); R()   //  Skip 3 quarters of the word.
+		MoveString(1)
+		endcase
+    
+	    case 13:   //  LINE
+	     {  n _ ReadNM()   //AAAA AAAA The line ID.
+		let File, Word _ lh n, rh n
+		NL(); WriteS("*tLINE*t")
+		WO(File, -1); WriteS(", "); WO(Word, -1)
+		endcase
+	      }
+
+	    case 14:   //  DECL
+		NL(); WriteS("*tDECL*t"); WO(ReadNM(), -1)
+		endcase
+    
+	case 15:	//Global
+		NL() ; WS("*t",Op,"*t",0) ; n_ReadNM()
+		WriteN(n) ; WS("*tL",0) ; WL() ; endcase
+
+	case 16:	// MODIFY -- print byte as OCODE item
+		R()
+		NL(); WS("*tMODIFY*t", rhz Getop(Ch), 0, 0)
+		endcase
+
+	    default:  // Oops -- we don"t recognize it.
+		W($*n); NL(); WriteS("Illegal OCODE item  "); WO(Ch, 3, $0); W($*n); endcase
+	  }
+      }
+    repeat
+  }
+
+
+//  Executing   Op _ Getop(Ch) examines the ocode item in Ch, and returns to the right half of Op
+//  the character string corresponding to the item and to the left half a quantity as follows...
+//     0     item takes no parameters.
+//     1     item takes an integer as parameter.
+//     2     item takes a label as parameter.
+//     3     LAB or DATALAB
+//     4     LSTR
+//     5     ENTRY, INT, EXT or STRINGCONST
+//     6     SWITCHON
+//     7     END
+//     8     BLOCK
+//     9     item takes a 1-byte operand.
+//    10     SPC
+//    11     SLC
+//    13     LINE
+//    14     DECL
+//    -1     unrecognized item.
+
+and Getop(Ch) _
+    selecton Ch into
+     {  default:            -1 ,, "ERROR"
+	case $*e:            7 ,, "END"
+	get "<xbcpl>ocodetxt"   //  The table of values.
+      }
+
+
+//  Following are routines for reading from the input stream and displaying the results.
+//  We have...
+//	t _ ReadNM()	Return the next numeric item.
+//	WN()		Read and print the next numeric item.
+//	t _ ReadL()	Return the next label.
+//	WL()		Read and print the next label.
+//	MoveString(n)	Move a string of length n, processing *n, etc.
+
+and ReadNM() _ valof  // Return value of next numeric.
+ {  let n _ nil
+    R(); q4 n _ Ch
+    R(); q3 n _ Ch
+    R(); q2 n _ Ch
+    R(); q1 n _ Ch
+    resultis n
+  }
+
+and WN() be  // Read and print next numeric.
+    WriteN(ReadNM())
+
+and ReadL() _ valof  // Return next label item.
+ {  let n _ 0
+    R(); q2 n _ Ch
+    R(); q1 n _ Ch
+    resultis n
+  }
+
+and WL() be  // Read and print next label.
+    WriteN(ReadL())
+
+and MoveString(n) be  // Move a string of length n.
+    for k _ 1 to n do
+     {  R()
+	let y _ selecton Ch into
+	 {  default:    Ch
+	    case $*t:  $t   //  tab
+	    case $*n:  $n   //  newline
+	    case $*b:  $b   //  backspace
+	    case $*p:  $p   //  new page (also, readin)
+	    case $*e:  $e   //  end of stream
+	  }
+	unless Ch eq y do W($**)
+	W(y)
+      }
+//   Obeying   t _ R()   reads the next character from the stream INPUT, stores it
+//   into Ch, and then returns it to t.
+
+and R() _ valof
+ {  Readch(INPUT, lv Ch)
+    resultis Ch
+  }
+//   Obeying   WS(s1, s2, ..., sn, 0)   causes the strings sAAAAk to be written with WriteS.  An
+//   argument of zero terminates things.  Up to 25 strings may be printed.
+
+and WS(a, nil repname 40) be
+ {  let v _ lv a
+    { WriteS(rv v); v _ v + 1 } repeatuntil rv v eq 0
+  }
+
+
+//   Obeying   WDS(n, w, L)   causes n to be written onto stream OUTPUT as a decimal integer
+//   into a field w+1 positions wide.  If n is negative, a minus sign is printed, while
+//   otherwise a space is left.  If n  ge  10w, it is truncated modulo 10w unless w<1, in which case
+//   w is made "big enough".  The parameter L should be either $0 or $*s, depending on
+//   what is wanted with leading spaces.
+//   Note that   WDS(-20, 4, $*s)   produces "-  20" rather than "  -20".  It"s a feature, not a bug.
+
+and WDS(n, w, L) be
+ {  test n < 0
+    then { W( $-); WD(-n, w, L) }
+    or   { W($*s); WD( n, w, L) }
+  }
+
+
+//   The routine WD is just like the preceeding one but assumes its first argument to be positive.
+
+and WD(n, w, L) be
+ {  static { P _ table 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000 }
+
+    if w < 1 do
+     {  let F(x) be
+         {  if x > 9 do F(x/10)
+            W( (x rem 10) + $0 )
+          }
+        F(n)
+        return
+      }
+
+    if n ge P|w do n _ n rem P|w   //  Truncate argument if it is too big.
+
+    V|0 _ L   //  Leading zeros.
+
+    while w > 0 do
+     {  w _ w - 1
+        let t _ P|w                //  The relevant power of ten.
+        let k _ n/t                //  The next digit to print.
+        n _ n rem t            //  The rest of the number.
+        W(V|k)                 //  Print the digit.
+        if (k ne 0) \ (w eq 1) do V|0 _ $0   //  All other zeros to print.
+      }
+  }
+
+
+//   Executing   WO(n, w, L)   causes n to be written onto stream OUTPUT as an octal integer
+//   onto a field w digits wide.  The parameter L should be $0 or $*s as leading zeros or
+//   leading spaces are wanted.  Negative numbers will be printed as 8"s complement.
+//   There will be truncation module 8w.
+//   If w < 0, only "enough" space is used and l is irrelevant.  n is best not negative.
+
+and WO(n, w, L) be
+ {  if w < 0 do
+     {  let F(x) be
+         {  if (x & #777777777770)  ne  0 do F(x rshift 3)
+            W( (x&7) + $0 )
+          }
+        F(n)
+        return
+      }
+
+    V|0 _ L
+    w _ 3*w
+
+    while w > 0 do
+     {  w _ w - 3
+        let k _ (n rshift w) & 7   //  The next digit to print.
+        W(V|k)
+        if (k ne 0) \ (w eq 3) do V|0 _ $0
+      }
+  }
+and W(x) be
+    Writech(OUTPUT, x & #777)

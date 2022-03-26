@@ -1,0 +1,374 @@
+
+// BCPL Compiler  --  Trans, Part 9 -- Process structure declarations.
+
+// TransStructDecl  Process a structure declaration, producing tables.
+// *TSD   Process one node of a structure declaration.
+// *InitNode  Initialize a node.
+// *BitsIn   Report number of bits in a declarator, such as BYTE.
+// *Check   Check that a structure declaration does not overlap words.
+// *CheckNames  Detect improper multiple use of a name.
+// * local to this compilation.
+
+get "<XBCPL>headtrn"            // Declarations for Trans.
+get "<XBCPL>headsymb"           // Symbol table declarations.
+
+//local statics
+static
+{ Offset :  nil                 // Offset of current item from
+                                //-- beginning of the structure.
+  SDvec :   nil                 // Table entry at next outer level,
+                                //-- into which to put names.
+  CBranch : nil                 // Current branch, for error
+                                //-- diagnostics.
+ }
+
+manifest
+{ MaxNames  := 127              // The maximum number of names
+                                //-- immediately inferior to any
+                                //-- structure element.
+ }
+
+// This is the only routine in this file known outside of it.  It is
+//-- called by TransBlockBody
+// to process a structure declaration.
+
+let TransStructDecl(x) be
+{ let t := nil                  // The new node will go here.
+  while H1|x eq LINE do { Curline := H2|x; x := H3|x }
+  switchon H1|x into
+  { case SEQ:                   // Do first one arm, and then the
+                                //-- other.
+      TransStructDecl(H2|x)
+      TransStructDecl(H3|x)
+      return
+
+    case SD:                    // A named structure at the top level.
+      { Offset := 0
+        if H2|x eq 0 do { TSD(H4|x, true); return }
+                                // No name at the top level.
+        let v := vec 4 + MaxNames
+                                // Maximum possible size of a node.
+        SDvec := v              // Make this quantity globally
+                                //-- available.
+        InitNode(x, v)
+
+        TSD(H4|x, false)        // Do all of the work...
+
+        CBranch := x            // For error diagnostics from
+                                //-- CheckNames.
+        CheckNames(v)           // Be sure there are no name
+                                //-- duplications.
+        v|2 := Offset           // The size of the thing...
+        if (q3 v|4)=#777 \ (q3 v|4)=-1 do v|1 := v|1 - v|2 * lh v|3
+                                          // Offset of zero-th element.
+        let N := 4 + q1 v|4     // Total number of words in the node.
+        t := Newvec(N)          // Get a place to put the table.
+        for k := 0 to N do t|k := v|k
+                                // Copy the thing there.
+        CBranch := t            // For error diagnostics from Check.
+        Check(t, 0)             // Check that no item straddles a word
+                                //-- boundary.
+        endcase
+       }
+
+    case OVERLAY:               // Overlay at the top level.
+      { TransStructDecl(H2|x)   // The one arm.
+        let L := Offset         // The size of the first arm.
+        TransStructDecl(H3|x)   // Do the other arm.
+        unless L eq Offset do TransReport(2,,162, x, 0)
+        return
+       }
+
+    case SDATOM:                // A terminal node at the top level.
+      { t := Newvec(4)          // Get some space to put the node.
+        InitNode(x, t)
+        t|1 := 0
+        let n := BitsIn(H4|x)   // Size of this kind of item.
+        let s := H5|x eq 0 => 1, EvalConst(H5+x)
+                                // The size field
+        t|2 := rh n * s         // The size of this item.
+        if (q3 t|4)=#777 \ (q3 t|4)=-1 do t|1 := t|1 - t|2 * lh t|3
+                                          // Offset of zero-th element.
+        q4 t|4 := lh n          // Type of access needed.
+        if lh n eq 2 & t|2 ne 1 do TransReport(176, x, 0)
+                                   // BITB n, with n  ne  1
+        endcase
+       }
+
+    default:                    // Improper node encountered -- EGAD.
+      TransReport(-1,,203, x, 0)
+                                // Compiler bug.
+      return
+
+   }
+
+// Install the created name in Dvec so it can be used.
+
+  if t|1 eq 0 do t|1 := 0       // But first get rid of -0 as an
+                                //-- offset.
+  if t|0 eq 0 return            // No name declared.  Curious???
+  AddName(H2|x, STRUCTURE, t)   // Make the name known in the current
+                                //-- block.
+  if (SWbits << SW.Symtab)&(SWbits << SW.SymtabLong) do EnterSymbol(H2|x, STstructure, t)
+                                // Make a symbol-table entry.
+ }
+
+// This routine does most of the work.  It is called by TransStructDecl
+//-- and recursively by itself.
+// It is applied to some part of a structure declaration and does the
+//-- following...
+// It creates a table for that part.
+// It stores the location of that table in SDvec.
+// It increments Offset by the total size of the part.
+
+and TSD(x, Sw) be               // Process a single structure item.  Sw
+                                //-- is true if names are to be
+                                //-- declared.
+{ while H1|x eq LINE do { Curline := H2|x; x := H3|x }
+  let t := nil                  // The new node goes here.
+  switchon H1|x into
+  { case SEQ:                   // First do one arm, then the other.
+      TSD(H2|x, Sw)
+      TSD(H3|x, Sw)
+      return
+
+    case OVERLAY:               // Two substructures overlaid.
+      { let OldOffset := Offset // Remember the current offset.
+        TSD(H2|x, Sw)           // Process one arm.
+        let NewOffset := Offset
+                                // Remember how big that one was.
+        Offset := OldOffset     // Put back what we started with.
+        TSD(H3|x, Sw)           // Process the other arm.
+        unless Offset eq NewOffset do TransReport(162, x, 0)
+                                      // Not both the same size.
+        return
+       }
+
+    case SD:                    // A substructure with substructures.
+      { if H2|x eq 0 do { TSD(H4|x, Sw); return }
+                                // No name, so no table.
+        let v := vec 4 + MaxNames
+                                // The largest possible table entry.
+        InitNode(x, v)
+        let OldSDvec, OldOffset := SDvec, Offset
+                                // Save 2 globals in the stack.
+        SDvec := v
+        let RepSW := (q3 v|4)=#777 \ (q3 v|4)=-1
+                                // Are there replicators?
+        if RepSW do Offset := 0
+        TSD(H4|x, false)        // Do all the work.....
+        CBranch := x            // For error diagnostics from
+                                //-- CheckNames.
+        CheckNames(v)           // Check for name duplication.
+        v|2 := RepSW => Offset, Offset - OldOffset
+                                // size
+        if RepSW do v|1 := v|1 - v|2 * lh v|3
+                                // Offset of zero-th element.
+        Offset := OldOffset + v|2 * rh v|3
+        SDvec := OldSDvec
+        let N := 4 + q1 v|4     // Number of words in this node.
+        t := Newvec(N)          // Some space into which to store the
+                                //-- result.
+        for k := 0 to N do t|k := v|k
+                                // Copy the node into static storage.
+        endcase
+       }
+
+    case SDATOM:                // Process a terminal node.
+      { let v := vec 4          // A place into which to put the node.
+        InitNode(x, v)
+        let n := BitsIn(H4|x)   // Size of this item.
+        let s := H5|x eq 0 => 1, EvalConst(H5+x)
+                                // The size field.
+        v|2 := rh n * s         // Size of 1 replication.
+        if (q3 v|4)=#777 \ (q3 v|4)=-1 do v|1 := v|1 - v|2 * lh v|3
+                                          // Offset of zero-th element.
+        Offset := Offset + v|2 * rh v|3
+                                // Step offset by space used.
+        q4 v|4 := lh n          // Type of access needed.
+        if lh n eq 2 & v|2 ne 1 do TransReport(176, x, 0)
+                                   // BITB n, with n  ne  1
+        if v|0 eq 0 return      // No structure def table if no name.
+        t := Newvec(4); for k := 0 to 4 do t|k := v|k
+                                           // Get some space, and copy
+                                           //-- the table.
+        endcase
+       }
+
+    case FILL:
+      { let n := rh BitsIn(H2|x)
+                                // Size to fill to.
+        let r := Offset rem n   // Bits of last element already used.
+        unless r eq 0 do Offset := Offset + n - r
+                                // Move Offset, but not if it"s OK.
+        return
+       }
+
+    default:
+      TransReport(-1,,203, x, 0)
+                                // Compiler bug.
+      return
+
+   }
+
+// We have a declaration.  Is this to be declared?
+
+  if Sw do                      // Top level call?
+  { if t|0 eq 0 return          // No name.   Curious??
+    AddName(H2|x, STRUCTURE, t)
+                                // Declare the name.
+    if (SWbits << SW.Symtab)&(SWbits << SW.SymtabLong) do EnterSymbol(H2|x, STstructure, t)
+                                  // Symbol table entry.
+    return
+   }
+
+// Enter the table in t into the parent node.
+
+  if t|1 eq 0 do t|1 := 0       // An offset of -0 is a bore.
+  let k := q1 SDvec|4           // Number of names used so far.
+  if k ge MaxNames do { TransReport(163, x, 0); return }
+                                // Too many names at this level.
+  SDvec|(k+5) := t              // Enter this node.
+  q1 SDvec|4 := k+1             // Step the count.
+  return
+ }
+
+and InitNode(x, v) be           // Initialize the table entry at v from
+                                //-- the declaration at x.
+{ let Name := H2|x              // The name.
+  v|0 := Name eq 0 => 0, H2|Name
+  v|1 := Offset                 // Current offset.
+  v|3 := 0 ,, 1                 // Lower limit _ 0, number of
+                                //-- replications _ 1
+  v|4 := 0 ,, 0                 // Type 0, 0 replications, 0
+                                //-- substructures.
+  unless H3|x eq 0 do           // Check for a REP node.
+  { let y := H3|x               // There is one, so process it.
+    let L := H2|y eq 0 => 1, EvalConst(H2+y)
+                                // The lower limit of replication.
+    and U := EvalConst(H3+y)    // The upper limit.
+    let R := U - L + 1          // Number of replications.
+    unless R > 0 do { TransReport(164, x, 0); L, R := 0, 1 }
+    v|3 := L ,, R               // Record lower limit, number of
+                                //-- replications.
+    q3 v|4 := true              // Record that there are replications.
+   }
+ }
+
+// This routine processes a structure declarator, returning its size
+//-- and its access type
+// coded as 0 for non-numeric, 1 for numeric, and 2 for boolean.
+
+and BitsIn(x) := valof
+switchon x into
+{ case BIT:     resultis 0 ,, 1
+
+  case BITN:    resultis 1 ,, 1
+
+  case BITB:    resultis 2 ,, 1
+
+  case CHAR:
+  case BYTE:    resultis 0 ,, ByteSizeOb
+
+  case BYTEN:   resultis 1 ,, ByteSizeOb
+
+  case WORD:    resultis 0 ,, WordSizeOb
+
+  default:                      // this should never occur
+                TransReport(-1,,203, x, 0); resultis 0 ,, 1
+ }
+
+// THISAAAA ROUTINEAAAA ISAAAA BUGGY
+//-- AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:AAAA
+//-- AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:AAAA
+//-- AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:AAAA
+//-- AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:AAAA:
+// This routine checks that the declaration is OK, in the sense that no
+//-- named item stradles a word
+// boundary.  Its parameters are a node and the offset at which its
+//-- parent is encountered.
+// This routine is called from TransStructDecl for case SD, and calls
+//-- itself.
+
+and Check(x, F) be
+{ let S := x|2                  // Size of 1 replication of this item.
+  if S eq 1 then return         // If this item has size 1, it needs no
+
+                                //-- check.
+
+  let R := rh x|3               // Number of replications.
+  and N := q1 x|4               // Number of substructures.
+  and RepSw := (q3 x|4)=#777 \ (q3 x|4)=-1
+                                // Is this item replicated?
+
+  if N eq 0 do                  // Has this item any substructures?
+  {                             // No, so it is a terminal element.  We
+                                //-- must check it...
+    if x|0 eq 0 return          // ...except that unnamed terminal
+                                //-- fields must not be checked.
+    if S eq WordSizeOb do       // Is it a WORD element?
+    {                           // Yes, so its offset must be on a word
+                                //-- boundary.
+      unless F rem WordSizeOb eq 0 goto BadDeclaration
+      return
+     }
+    if S > WordSizeOb goto BadDeclaration
+                                // One replication of it is too big.
+                                // It"s not a word.  Is it replicated?
+    unless RepSw do
+    { unless F rem WordSizeOb + S le WordSizeOb goto BadDeclaration
+      return
+     }
+
+// It"s replicated, so each replication must be checked.
+
+    F := F + S*R                // Adjust offset to be that of first
+                                //-- element used, rather than zero-th.
+    for r := 1 to R do
+    { unless (F rem WordSizeOb) + S le WordSizeOb goto BadDeclaration
+      F := F + S
+     }
+    return
+   }
+
+// It"s not a terminal node, so all sub-nodes must be processed.  As a
+  //-- special case,
+                                // if each subnode is an even number of
+                                //-- words, we need only examine the
+                                //-- first replication.
+  if S rem WordSizeOb eq 0 \ R eq 1 do
+  { for k := 5 to N+4 do Check(x|k, F)
+                                // Check all subfields.
+    return
+   }
+
+// There are no simplifications, so do it the hard way.
+
+  for r := 1 to R do            // Iterate all replications.
+  { for k := 5 to N+4 do Check(x|k, F)
+    F := F + S
+   }
+  return
+
+BadDeclaration:
+  TransReport(165, CBranch, 0)
+  unless CBranch|0 eq 0
+  do TransReport(0, 0, "structure is ", CBranch|0, 0)
+  TransReport(0, 0, "element at fault is ", x|0, 0)
+
+ }
+
+and CheckNames(t) be            // Check that all subnodes at a given
+                                //-- level are distinct.
+{ let N := 4 + q1 t|4           // The last cell occupied by a name.
+  for J := 5 to N-1 do          // Look at all of the names, except the
+                                //-- last.
+  { let Name := t|J|0           // The current name.
+    if Name eq 0 loop           // An unnamed field -- don"t check it.
+    for K := J+1 to N do        // Compare it with all other names.
+    if Name eq t|K|0 do
+    { TransReport(166, CBranch, "the name is ", Name, 0); break
+     }
+   }
+ }
+

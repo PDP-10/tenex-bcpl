@@ -1,0 +1,356 @@
+
+// BCPL Compiler -- Trans, Main Program.
+
+// TranslateTree  The main program to translate AE-Tree to OCODE.
+// EnterSymbol  Enter a name into the symbol table, and tell CG.
+// EnterEnd  Enter a section end into the symbol table, and tell CG.
+// TransReport  Report errors in Trans.
+// SaveStaticItem  Save a static item to be output at the end.
+// *ScanTable  Scan a table and store its elements into consecutive
+//-- storage.
+// *OutputTable  Output a table at the end.
+// * local to this file.
+
+get "<bcpl>head"
+get "<bcpl>utilhead"
+get "<xbcpl>headtrn"            // Declarations for TRANS.
+get "<xbcpl>headsymb"           // Symbol table declarations.
+
+static
+{ Dvec :         nil            // Stack of identifiers currently
+                                //-- declared.
+  SSP:           0
+  CURFNM:        nil            // current function name
+  PDRMAXSSP:     0
+  DvecS :        DvecN+DvecN    // Next free location in Dvec.
+  DvecE :        DvecN+DvecN    // Last Dvec location currently
+                                //-- declared.
+  DvecP :        DvecN+DvecN    // Base in Dvec of current block body.
+  Casetable :    nil            // Table of case entries.
+  CaseP :        0              // Next free location in the case
+                                //-- table.
+  ZERONODE :     nil            // A tree node consisting of (NUMBER,
+                                //-- 0)
+  RoutineBody :  false          // Is ""return"" legal?
+  FunctionBody : false          // Are we in a function body?
+  ValofBlock :   false          // Is ""resultis"" legal?
+  SwitchBlock :  false          // Are ""case"" and ""default"" legal?
+  RepeatBlock :  false          // Are ""loop"" and ""break"" legal?
+  Breaklabel :   nil            // Label to hop to on ""break"".
+  Resultlabel :  nil            // ditto ""resultis"".
+  Defaultlabel : nil            // ditto ""resultis"".
+  Endcaselabel : 0              // ditto ""endcase"" -- and set
+                                //-- non-zero if ""endcase"" is OK.
+  Looplabel :    nil            // ditto ""loop"".
+  VecSSP :       nil
+  StatItemL :    nil            // *Linked list of static items to be
+                                //-- output at the end.
+  StatItemP :    nil            // *Pointer to the last item in the
+                                //-- above list.
+                                // *local to this file.
+ }
+
+let TranslateTree(x) be
+{                               // init statics!!
+  Constant:=false
+  BlockIn:=0
+  BlockWanted:=0
+  CURFNM:="TOPLEVEL"
+  PDRMAXSSP:=0
+  DvecS := DvecN+DvecN          // Next free location in Dvec.
+  DvecE := DvecN+DvecN          // Last Dvec location currently
+                                //-- declared.
+  DvecP := DvecN+DvecN          // Base in Dvec of current block body.
+  CaseP := 0                    // Next free location in the case
+                                //-- table.
+  RoutineBody := false          // Is ""return"" legal?
+  FunctionBody := false         // Are we in a function body?
+  ValofBlock := false           // Is ""resultis"" legal?
+  SwitchBlock := false          // Are ""case"" and ""default"" legal?
+  RepeatBlock := false          // Are ""loop"" and ""break"" legal?
+  Endcaselabel := 0             // ditto ""endcase"" -- and set
+                                //-- non-zero if ""endcase"" is OK.
+  let v := vec DvecT
+  Dvec := v
+  Dvec|0, Dvec|1 := 0, 0        // An used entry, for error return from
+                                //-- CellWithName.
+  Dvec|DvecN, Dvec|(DvecN+1) := (LABEL ,, H2|ERRORNAME), 0
+                                // Declare "$$".
+
+  let v := vec CaseT
+  Casetable := v
+
+  StatItemL := List2(0, nil); StatItemP := StatItemL
+  if SWbits << SW.Debug do
+  { WriteS("*nStatic item list starts at "); WriteOct(StatItemL)
+    PBOUT($*n)
+   }
+
+  ZERONODE := List2(NUMBER, 0)
+
+  Curfile, Curline := -1, 0
+  SSP := 1
+  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+  Out2(STACK, SSP)
+  if SWbits << SW.Help do Help("stopped before Decllabels*n")
+
+  Decllabels(x)                 // DO THE WORK.
+  Trans(x)
+
+  Out1(FINISH)
+
+  Curline := -1                 // No line printed for later Reports.
+
+// CG now does this (in TENEX BCPL)
+// for i _ 0 step 2 to GlobdeclS do { OutN(Globdecl|i);
+  //-- OutL(Globdecl|(i+1)) }
+
+// If printing OCODE for TX2 or compiling for BCOM, include the
+  //-- externals.
+
+  for i := 0 step ExtDeclN to ExtDeclS - ExtDeclN do
+  { let v := vec NAMELENGTH
+    Unpackstring(ExtDecl|i, v)  // The name of the external item.
+    Out3P(lh ExtDecl|(i+1), v|0, rh ExtDecl|(i+1))
+    for i := 1 to v|0 do OutC(v|i)
+   }
+
+  Impures()
+
+// Output the static items saved during the compilation.
+
+  StatItemP := StatItemL        // Start at the beginning of the linked
+                                //-- list.
+  until rv StatItemP eq 0 do
+  { let L := lh StatItemP|1     // The label associated with this item.
+    and x := rh StatItemP|1     // The associated node.
+    switchon H1|x into
+    { case VEC:
+        Compdatalab(L)          // Place the label.
+        Out2(VEC, 1+H2|x)
+        endcase
+
+      case TABLE:
+        Compdatalab(L)          // Place the label.
+        OutputTable(x)
+        endcase
+
+      case ASCIZCONST:
+      case STRINGCONST:
+        { let v := vec StringMaxOb
+          Unpackstring(H2+x, v)
+          Pures()
+          Out3P(H1|x, v|0, L)
+          for k := 1 to v|0 do OutC(v|k)
+          Impures()
+          endcase
+         }
+      default:
+        TransReport(-1,,203, x, 0)
+                                // Compiler bug.
+     }
+    StatItemP := rv StatItemP   // To the next item of the linked list.
+   }
+
+  Pures()                       // Any RC"s are to go into block A.
+
+ }
+
+and EnterSymbol(Name, Type, Datum) := valof
+                                // Enter a name into the symbol table.
+{ let Offset := SymtabStoreSymbol(Name, Type, Datum)
+  unless Offset < 0 do Out2(DECL, Offset)
+  resultis Offset
+ }
+
+and EnterEnd(ST) be             // Enter a section end into the symbol
+                                //-- table.
+{ if ST eq SymtabNextN() return // Nothing was declared.
+  let Offset := SymtabStoreEnd(ST)
+  unless Offset < 0 do Out2(DECL, Offset)
+ }
+
+// This routine reports errors detected in TRANS.  Its arguments...
+// 1st error number, to be passed verbatim to BCPLreport (unless it
+//-- is 0).
+// 2nd piece of tree to print if debugging (unless it is zero).
+// others other stuff to print, coded like this...
+// > 0 print as a string
+// -1 print next argument as a number
+// -2 print next argument as a line
+// 0 terminate argument list
+
+and TransReport(N, Tree, nil repname 20) be
+{ let a := OUTPUT; OUTPUT := MONITOR
+  unless N eq 0 \ N=115 do
+  { BCPLreport(N)
+    test Curline > 0            // Is there a current line?
+    ifso
+    { WriteS("while compiling the line*n   "); Wfline(Curline,3)
+     }
+    ifnot if Curline < 0 do WriteS("after the end of compilation.*n")
+   }
+
+  if N=115 do
+  { Reportcount:=Reportcount+1 ; WriteS("*nNot Declared: ")
+   }
+  let t := lv Tree              // One less than the address of the
+                                //-- first optional parameter.
+  { t := t + 1                  // Step to the next parameter.
+    let s := rv t               // The next parameter.
+    if s eq 0 break             // Last parameter.
+    if s > 0 do { WriteS(s); loop }
+                                // Parameter is a string.
+    t := t + 1
+    if s eq -1 do { WriteN(rv t); loop }
+    if s eq -2 do { WriteS("*n   "); Wfline(rv t); loop }
+   }
+  repeat
+
+  if N=115 do
+  { WriteS("*s(used in ")
+    WriteS(CURFNM)
+    WriteS(")")
+   }
+  PBOUT($*n)
+  if SWbits << SW.Debug & Tree ne 0 do
+  { Plist(Tree, 0, 5); PBOUT($*n)
+   }
+  OUTPUT := a
+ }
+
+// This routine is called to save a static item to be output at the end
+//-- of compilation.  It is
+// called from Trans in case STATIC and from Load in case TABLE.
+
+and SaveStaticItem(x, L) be     // The item x has label L.
+{ switchon H1|x into
+  { default:
+      TransReport(-1,,203, x, 0)
+                                // Compiler bug.
+      return
+
+    case VEC:
+      x := List2(VEC, EvalConst(H2+x))
+      StaticN := StaticN + H2|x + 1
+                                // 1 + H2|x static cells for the
+                                //-- vector.
+      endcase
+
+    case TABLE:
+      { let n := ListLength(H2|x)
+        StaticN := StaticN + n  // n static cells used.
+        let t := Newvec(n+1)
+        t|0, t|1 := TABLE, n
+        unless ScanTable(H2|x, t+2) eq n do
+        { TransReport(-1,,203, x, 0); return
+         }                      // Compiler bug.
+        x := t
+       }
+    case ASCIZCONST:
+    case STRINGCONST:
+   }
+
+  let t := List2(0, nil)
+  StatItemP|0, StatItemP|1 := t, L,,x
+  StatItemP := t
+ }
+
+// This routine is called by SaveStaticItem and by itself.   X is a
+//-- table and T is the address
+// of a cell.  If X represents N cells, then T|0...T|(N-1) are stuffed
+//-- with the cells and N
+// is returned.  The only entries permitted are NUMBER, VEC,
+//-- STRINGCONST and TABLE.
+
+and ScanTable(X, T) := valof
+{ let x := rh X
+  switchon H1|x into
+  { case COMMA:
+                      { let k := ScanTable(H2|x, T)
+                        resultis k + ScanTable(H3|x, T+k)
+                       }
+    case REPNAME:
+    case REPVAL:
+                      { let k := 0
+
+// chek for reasonableness
+
+                        let m:=EvalConst(H3+x)
+                        unless 1 le m le 2000 do TransReport(37,x,0)
+                        for n := 1 to m
+                        do k := k + ScanTable(H2|x, T+k)
+                        resultis k
+                       }
+    case TABLE:
+                      { let n := ListLength(H2|x)
+                        StaticN := StaticN + n
+                        let t := Newvec(n+1)
+                        t|0, t|1 := TABLE, n
+                        unless ScanTable(H2|x, t+2) eq n
+                        do TransReport(-1,,203, x, 0)
+                        rv T := t
+                        resultis 1
+                       }
+    case VEC:         x := EvalConst(H2+x)
+                                // Length of the vector.
+                      StaticN := StaticN + x + 1
+                      rv T := List2(VEC, x)
+                      resultis 1
+
+    case ASCIZCONST:
+    case STRINGCONST: rv T := x
+                      resultis 1
+
+    default:          rv T := List2(NUMBER, EvalConst(lv X))
+                      resultis 1
+   }
+ }
+
+and OutputTable(x) be           // Called at the end of Trn to output
+                                //-- tables saved by SaveStaticItem.
+{ for n := 2 to 1+x|1 do switchon H1|(x|n) into
+  { case VEC:
+    case STRINGCONST:
+    case TABLE:
+    case ASCIZCONST:
+                      { let L :=
+                          NextParam(((H1|(x|n) eq STRINGCONST)\
+                                     (H1|(x|n)=ASCIZCONST)) =>
+                                   BlockA,
+                                   BlockB)
+                        Out2P(ITEMNL, L)
+                        lh x|n := L
+                        loop
+                       }
+    default:          Out2(ITEMN, H2|(x|n))
+   }
+
+  for n := 2 to 1+x|1 do
+  { let L := lh x|n             // The associated label.
+    if L eq 0 loop              // Already processed, as a NUMBER or
+                                //-- such.
+    let y := rh x|n             // The associated node.
+    switchon H1|y into
+    { case VEC:         Compdatalab(L)
+                        Out2(VEC, 1+H2|y)
+                        loop
+
+      case ASCIZCONST:
+      case STRINGCONST:
+                        { let v := vec StringMaxOb
+                          Unpackstring(H2+y, v)
+                          Pures()
+                          Out3P(H1|y, v|0, L)
+                          for k := 1 to v|0 do OutC(v|k)
+                          Impures()
+                          loop
+                         }
+      case TABLE:       Compdatalab(L)
+                        OutputTable(y)
+                        loop
+      default:          TransReport(-1,,203, x, 0)
+                                // Compiler bug.
+     }
+   }
+ }

@@ -1,0 +1,236 @@
+
+// Minimal Debugging Tool (MDT) for the PDP-11 BCPL system.
+//
+// Eric Mader October 17, 1973
+
+
+external {
+MDT
+SPBASE
+BPTPI
+}
+
+static {
+CH:	0				// Characters read here
+Arg:	0				// Arguement of commands here
+Loc:	0				// Contains address of open loc.
+}
+
+manifest {
+TKS:	rv #177560			// TTY keyboard status register
+TKB:	rv #177562			// TTY keyboard buffer
+TPS:	rv #177564			// TTY printer status register
+TPB:	rv #177566			// TTY printer buffer
+PS:	rv #177776			// PSW
+BPT _ 3
+TBIT _ #20
+BPTab _ table (table 0,0) repname 8
+}
+
+structure {
+    BP{
+        LOC word
+        CON word
+    }
+    StackFrame{
+        Register^7 word
+        PC word
+        PS word
+    }
+}
+
+
+
+
+// Teletype I/O routines.
+
+let RCH () _ valof			// Read a character from TTY
+{
+    while rh TKS ge 0 do {}		// wait for a character
+    let C _ TKB				// read it
+    OCH (C)				// echo it
+    resultis C & #177			// return it minus parity
+}
+
+and OCH (Character) be			// Type a character on the TTY
+{
+    while rh TPS ge 0 do {}		// wait for printer to be ready
+    TPB _ Character			// type the character
+}
+
+and GNum () _ valof			// read an octal number from TTY
+{
+    let N _ 0				// number accumulated here
+    {
+        N _ (N lshift 3) + CH - $0	// include new digit
+        CH _ RCH ()			// read next character
+    } repeatwhile $0 le CH le $7	// continue reading if a digit
+    resultis N				// not a digit, return
+}
+
+and ONum (Number) be			// type an octal number on TTY
+{
+    let Digit _ Number & #7		// and off lowest digit
+    Number _ Number rshift 3		// remove from number
+    if Number ne 0			// result zero?
+    then ONum (Number)			// no - do next digit
+    OCH (Digit + $0)			// type the digit
+}
+
+
+
+and SetBreakpoints () be
+{					// Set breakpoints
+    for i _ 0 to 2*7 by 2 do
+    {
+      let B _ BPTab|i
+      and L _ B>>BP.LOC
+        if L ne 0
+        then {
+            B>>BP.CON _ rv L
+            rv L _ BPT
+        }
+    }
+}
+
+and RemoveBreakpoints () be
+{
+    for i _ 0 to 2*7 by 2 do
+    {
+        let B _ BPTab|i
+        and L _ B>>BP.LOC
+        if L ne 0
+        then rv L _ B>>BP.CON
+    }
+}
+
+and BPTPI () be
+{
+    test (SPBASE>>StackFrame.PS & TBIT) = 0
+    ifnot{				// Trace bit, finish proceed
+        SetBreakpoints ()
+        SPBASE>>StackFrame.PS _ SPBASE>>StackFrame.PS & ~TBIT
+    }
+    ifso{
+        let Adr _ SPBASE>>StackFrame.PC-2
+        SPBASE>>StackFrame.PC _ Adr	// so P goes to right place
+	OCH ($*c); OCH ($*l)
+        ONum (Adr)
+        OCH ($>); OCH ($B)
+        for i _ 0 to 2*7 by 2 do
+            if BPTab|i>>BP.LOC = Adr
+            then {
+                OCH (i/2 + $0)
+                MDT ()
+                return
+            }
+            OCH ($E)
+            MDT ()
+    }
+}
+
+
+
+
+
+
+
+// MDT main command loop.
+
+and MDT () be
+{
+
+    PS _ PS \ #240			// dis-allow interrupts
+    RemoveBreakpoints ()
+
+    {
+        OCH ($*c); OCH ($*l); OCH ($**)	// prompt
+        CH _ RCH ()			// read 1st ch. of command
+	switchon CH into
+        {
+        case $P:
+        case $p:			// Proceed
+            SPBASE>>StackFrame.PS _ SPBASE>>StackFrame.PS \ TBIT
+RETUSR:
+            OCH ($*c); OCH ($*l)
+	    while rh TPS ge 0 do {} // wait for TTY done
+            return			// return to caller
+        case $S:
+        case $s:			// S means Top of stack
+            Arg _ SPBASE		// open top of stack
+            CH _ RCH ()
+            goto HaveArg
+        case $.:			// dot, equals current loc.
+            Arg _ Loc			// set arg. to current loc.
+            CH _ RCH ()			// read next ch (as GNum would)
+            goto HaveArg		// treat like a number
+        case $0 to $7:			// a number - set a Location
+            Arg _ GNum ()		// read the number
+HaveArg:
+            switchon CH into		// process Arg reading commands
+            {
+Examine:
+                OCH ($*l)
+ExamineL:
+                OCH ($*c)
+                OCH ($*s)
+                ONum (Arg)		// type new address
+                OCH ($/)
+
+            case $/:			// examine mode
+                if (Arg & 1) ne 0	// ODD?
+                then {
+                    OCH ($O); OCH ($?)
+                    loop
+                }
+
+                Loc _ Arg		// no, ok to open
+                OCH ($*s)
+		ONum (rv Loc)		// type contents
+		OCH ($*s)
+		CH _ RCH ()		// read next character
+		test ($0 le CH le $7)	// new contents?
+		ifso Arg _ GNum ()	// yes - read them
+		ifnot Arg _ rv Loc	// no - is this a fudge?
+
+		switchon CH into	// decide what to do next
+		{
+		case $*l:		// open next word
+		    rv Loc _ Arg	// store "new" contents
+		    Arg _ Loc + 2	// get new address
+		    goto ExamineL	// and open it
+		case $*^:		// open previous word
+		    rv Loc _ Arg	// store "new" contents
+		    Arg _ Loc - 2	// new address
+		    goto Examine	// open it
+		case $*t:
+		case $*a:		// open indirect
+		    rv Loc _ Arg	// store "new" contents
+		    goto Examine	// open the indirect loc.
+		case $*c:		// end examine mode
+		    rv Loc _ Arg	// "new" contents
+		    loop		// end mode
+		}
+                endcase
+            case $g:
+            case $G:			// G, goto
+                SetBreakpoints ()
+                SPBASE>>StackFrame.PC _ Arg
+                goto RETUSR
+            case $B:
+            case $b:
+                CH _ RCH ()
+                if ($0 le CH le $7)
+                then {
+                    BPTab|((CH-$0)*2)>>BP.LOC _ Arg
+		    loop
+                }
+	    }
+	default:
+	    OCH ($?)
+	case $*c:
+	}
+    } repeat
+}
+
+

@@ -1,0 +1,139 @@
+
+// BCPL Compiler -- CAE Main Program.
+
+// ConstructTree Construct the AE-tree.
+// CAEreport Error report for CAE.
+
+get "<xbcpl>headcae"
+get "<bcpl>head"
+get "<bcpl>utilhead"
+
+//Home base for the following statics
+static
+{ Symb:      0
+  B:         0
+  Chkind:    0
+  LineP:     0
+  GetV:      0
+  GetP:      0
+  LineV:     0
+  WUPFLG:    0
+  NILNODE:   0
+  V:         0
+  ERRORNAME: 0
+  TRUENODE:  0
+  FALSENODE: 0
+ }
+
+//local static
+static
+{ LastCharPtr : -1
+ }                              // Line pointer for last error message.
+
+let ConstructTree(LvTree,fn) be // Translate the source code, storing
+                                //-- the result into rv LvTree.
+{ let v := vec LineT
+  LastCharPtr:=-1
+  GetP,GetV:=0,0
+  LineV := v                    // Store each line here as it is read,
+                                //-- for CAEreport.
+  for n := 1 to LineT do LineV|n := 0
+  LineV|0 := $*n
+
+  let v := vec GetT; GetV := v  // Keep track of nested "get" files.
+  let v := vec Vmax; V := v     // Nextsymb reads names and numbers
+                                //-- here.
+
+  TRUENODE := List2(TRUE,true)
+  FALSENODE := List2(FALSE, false)
+  NILNODE := List2(NIL, 0)
+  ERRORNAME := List2(NAME, "ERRORNAME")
+                                // Used to make a legal tree when a
+                                //-- name is missing.
+
+  if SWbits << SW.Help do Help("Stopped before first OpenSource (inside ConstructTree)*n")
+
+  OpenSource(fn)                // Open the initial source file.
+  Nextsymb()
+
+  if SWbits << SW.Pprep do      // Repeat preprocessor.
+  { PBOUT($*n)
+    { WriteOct(Symb)
+      switchon Symb into
+      { case STRINGCONST:
+        case SECTBRA:
+        case SECTKET:     PBOUT($*t); WriteS(lv V|1); endcase
+
+        case NUMBER:
+        case CHARCONST:   PBOUT($*t); WriteN(V|0); endcase
+
+        case NAME:        PBOUT($*t); WriteS(V|0); PBOUT($*t)
+                          WriteOct(V|0)
+        default:
+       }
+      PBOUT($*n)
+      Nextsymb()
+     }
+    repeatuntil Symb eq END
+    return
+   }
+
+l:
+  rv LvTree := Readblockbody()  // DO THE WORK.
+
+  unless Symb eq END do
+  { if rv LvTree=0 do
+    {
+      { Nextsymb()
+       }
+      repeatuntil Symb=END \ Symb=AND
+      if Symb=END do goto ll
+      Symb:=LET
+      goto l
+     }
+  ll:
+    CAEreport(99)
+    if Symb=AND do
+    { CAEreport(36)
+      Symb:=LET
+      goto l
+     }
+   }
+  JNDRD(INPUT)
+ }
+
+and CAEreport(n) be
+{ BCPLreport(lh n < -1 => rh n, n)
+  let CharPtr := LinePtr()
+  test LineV|LineP eq $*e
+  ifso WriteS(" at end of file*n*n")
+  ifnot test CharPtr eq LastCharPtr
+        ifso WriteS(" at same place*n")
+        ifnot
+        { LastCharPtr := CharPtr
+                                // Remember where this error occurred.
+          unless Curfile eq 0 do
+                                 // Identify any file other than the
+                                 //-- initial one.
+          { WriteS(" in file "); WriteS(rh GetnameV|Curfile)
+            PBOUT($*n)
+           }
+          let i, j := LineP, -1
+          WriteS(" at*n")       // Skip up to next newline.
+          { i := i+1
+            if i > LineT do i := 0
+            if LineV|i eq $*n do { j := i; LineV|i := 0; break }
+            if i eq LineP do { WriteS("..."); break }
+           }
+          repeat                // Print last few lines.
+          { i := i+1
+            if i > LineT do i := 0
+            PBOUT(LineV|i)
+            if LineV|i eq $*n do { j := i; LineV|i := 0 }
+           }
+          repeatuntil i eq LineP
+          unless j eq -1 do LineV|j := $*n
+          PBOUT($*n)
+         }
+  if lh n < -1 do BCPLreport(lh n ,, 0)
+ }

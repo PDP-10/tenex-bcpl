@@ -1,0 +1,23 @@
+21-Jul-76 10:29:12-EDT,655;000000000000   !
+Date: 21 Jul 1976 1029-EDT
+Sender: JMILLER at BBN-TENEXA
+Subject: bddt 2.0.9
+From: JMILLER at BBN-TENEXA
+To: Plummer, Halbert, Jmiller
+Message-ID: <[BBN-TENEXA]21-Jul-76 10:29:01.JMILLER> 
+Fcc: <DOCUMENTATION>BDDT.CHANGES;1    
+
+
+This version contains several bug fixes:
+
+1) For use on the DECSystem 20, all occurrences of $*N (ASCII 37)
+have been changed to *C*L
+
+2) For use on the DECSystem 20, a line-feed immediately following
+a  carriage-return is ignored (TENEX generates an EOL rather than
+a carriage-return, hence this change is compatible)
+
+3) A potential hole in the breakpoint proceed logic was plugged.
+
+--Jim
+-------   

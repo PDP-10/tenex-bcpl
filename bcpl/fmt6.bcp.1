@@ -1,0 +1,70 @@
+
+get "headfmt.bcp"
+
+let ErrorSet(Shortening, Fn, a, b, c, d, e) _ valof
+{ let Savec _ vec SAVECSIZE
+  SaveState(Savec)
+  let SaveLB _ LastBackup
+  and SaveTS _ ThisShortening
+  TotalShortening _ TotalShortening + Shortening
+  ThisShortening _ Shortening
+  LastBackup _ lv Shortening - 2
+  BackupLabel _ Fail
+  Fn(a, b, c, d, e)
+  LastBackup _ SaveLB
+  TotalShortening _ TotalShortening - ThisShortening
+  ThisShortening _ SaveTS
+  resultis true
+
+Fail:
+  RestoreState(Savec)
+  if NeededShortening > Shortening &
+     MinFold=0
+  then Backup(NeededShortening - Shortening)
+  resultis false
+}
+
+and SaveState(Savec) be
+{ static
+  { S: nil
+  }
+  let Push(Item) be
+  { S|0 _ S|0 + 1
+    S|(S|0) _ Item
+  }
+  S _ Savec
+  S|0 _ 0
+  Push(rfptr(InFile) - TopPtr + ScnPtr)
+  Push(rfptr(OutFile))
+  for i _ 0 to Line|0 do Push(Line|i)
+  for i _ 1 to SaveThings|0 do Push(rv SaveThings|i)
+  for i _ 0 to MAXLFF do Push(LabelFitFailures|i)
+}
+
+and RestoreState(Savec) be
+{ static
+  { S: nil
+  }
+  let Pop() _ valof
+  { S|0 _ S|0 + 1
+    resultis S|(S|0)
+  }
+  WriteS(OutFile, "*n___*c*l*l*l")
+  S _ Savec
+  S|0 _ 0
+  ResetInputFile(Pop())
+  sfptr(OutFile, Pop())
+  Line|0 _ Pop()
+  for i _ 1 to Line|0 do Line|i _ Pop()
+  for i _ 1 to SaveThings|0 do rv SaveThings|i _ Pop()
+  for i _ 0 to MAXLFF do LabelFitFailures|i _ Pop()
+}
+
+and Backup(Need) be
+{ if LastBackup = 0 then return
+  BackupCount _ BackupCount + 1
+  NeededShortening _ Need
+  rv #16 _ LastBackup
+  goto BackupLabel
+}
+

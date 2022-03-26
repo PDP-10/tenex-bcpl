@@ -1,0 +1,112 @@
+
+
+// llwrit.bcp
+// a program to move a text file from BBN-TENEX to Lincoln TX-2
+// Rovner, 1/13/73
+//
+
+get "<BCPL>HEAD"
+get "<BCPL>NLHEAD"
+get "<BCPL>UTILHEAD"
+
+static{ DBGSW_false}
+
+let Start() be
+ { InitNetLibrary()
+   OUTPUT_CreateOutput(0)	//primary output stream
+   let ttyin_FindInput(0)	//tty input stream
+
+   { WriteS("debug? Y or N:")
+   let tt_BIN(ttyin)
+   WriteS("*n")
+   if tt=$Y \ tt=$y do { DBGSW_true ; break}
+if tt=$N \ tt=$n do break} repeat
+   let callvec_vec 20
+   let tx2out,tx2in_0,0
+   { if CreateNetDialogue(-1,,"LL-TX-2",lv tx2out,lv tx2in)=0 break
+     WriteS("Still trying to connect to Lincoln*n")
+     Wait(8000)	//8 second Wait
+   } repeat
+
+   INPUT_tx2in	//primary input stream
+   until LLPBIN()=$*s & LLPBIN()=$I & LLPBIN()=$N & LLPBIN()=$*s do
+    loop
+
+   WriteS("tty connection to TX-2 established*n")
+   LLWriteS(tx2out,"bbn*c*l")
+   until LLPBIN()=$W & LLPBIN()=$W & LLPBIN()=$W & LLPBIN()=$W do loop
+   LLWriteS(tx2out,"bush*c*l")
+
+   until LLPBIN()=$*c & LLPBIN()=$*l & LLPBIN()=$^[ & LLPBIN()=$2 & LLPBIN()=$*s do
+      loop
+   let inf_FindInput(1)
+   let outfilename_vec 30
+   WriteS("TX-2 file name:*s")
+   ReadWord(ttyin,outfilename)
+   LLWriteS(tx2out,"5text ")
+   LLWritech(tx2out,$^[)
+   LLWritech(tx2out,#166)
+   let ch_nil
+   let chcnt_0
+   Readch(inf,lv ch)
+   until ch=$*e do
+    { chcnt_chcnt+1
+if (chcnt > 200) & (ch ne $*n) & (ch ne $*c) & (ch ne $*l) & (ch ne $^[) do
+{    LLWritech(tx2out,$^[)
+   LLWritech(tx2out,#165)
+   LLWritech(tx2out,$*s)
+   LLWriteS(tx2out,outfilename)
+   LLWriteS(tx2out,"*c*l")
+   until  LLPBIN()=$^[ & LLPBIN()=$2 & LLPBIN()=$*s do
+      loop
+   LLWriteS(tx2out,"5text ")
+   LLWriteS(tx2out,outfilename)
+   LLWritech(tx2out,$*s)
+   LLWritech(tx2out,$^[)
+   LLWritech(tx2out,#166)
+chcnt_0
+}
+LLWritech(tx2out,ch)
+      Readch(inf,lv ch)
+    }
+   EndRead(inf)
+   LLWritech(tx2out,$^[)
+   LLWritech(tx2out,#165)
+   LLWritech(tx2out,$*s)
+   LLWriteS(tx2out,outfilename)
+   LLWriteS(tx2out,"*c*l")
+   until  LLPBIN()=$^[ & LLPBIN()=$2 & LLPBIN()=$*s do
+      loop
+   WriteS(tx2out,"qq*c*l")
+   until LLPBIN()=$o & LLPBIN()=$w & LLPBIN()=$? &LLPBIN()=$*c & LLPBIN()=$*l do loop
+   WriteS(tx2out,"lo*c*l")
+   until LLPBIN()=$*s & LLPBIN()=$I & LLPBIN()=$N & LLPBIN()=$*s do loop
+   EndNetDialogue(tx2out,tx2in)
+ }
+
+and LLPBIN() _ valof
+ { let ch_PBIN()
+   if DBGSW do Writech(OUTPUT,ch)
+   resultis ch
+ }
+
+
+and SendRFC(nets) be
+ { let v_vec 20
+   v|1_nets
+   v|2_#20
+   JSYS(#77,v)	//MTOPR
+ }
+
+
+and LLWriteS(outs,strng) be
+ { WriteS(outs,strng)
+   if DBGSW do WriteS(strng)
+ }
+
+and LLWritech(outs,ch) be
+ { Writech(outs,ch)
+   if DBGSW do Writech(OUTPUT,ch)
+ }
+
+

@@ -1,0 +1,221 @@
+
+// BCPL Compiler -- Trans, Part 3.
+
+// Decllabels Declare all the labels at the top level in a block.
+// *ScanLabels Do the work for Decllabels.
+// Jumpcond Compile a conditional jump.
+// Loadlist Load the R-values of a list of elements.
+// * local to this file.
+
+get "<XBCPL>headtrn"            // Declarations for Trans.
+get "<XBCPL>headsymb"           // Symbol table declarations.
+
+// This routine is called for all blocks to declare all labels
+//-- reachable at the top level
+// in the block.  It uses ScanLabels to do the work.
+
+let Decllabels(x) be
+{ let DS := DvecS
+  Impures()
+  let L := Curline
+  ScanLabels(lv x)
+  Pures()
+  CheckDistinct(DS, DvecS)
+  Curline := L
+  DvecE := DvecS
+ }
+
+// This routine does the work for Decllabels just above.  All labels
+//-- are declared.  The boolean arms
+// of conditional commands are looked at to see if they can be
+//-- evaluated at compile time.  If
+// so, the appropriate optimizations are done.
+
+and ScanLabels(LVX) be
+{ let x := rv LVX
+  if x eq 0 return
+
+  let Op := H1|x
+  and Node := 0                 // This variable holds the tree that is
+                                //-- left after optimization.
+
+  switchon Op into
+  { default:          return
+
+    case COLON:       H4|x := NextParam(BlockA)
+                      DeclStat(H2|x, STstaticYYYYlabel)
+                                // Declare the label static and compile
+                                //-- DATALAB.
+                      Out2P(ITEML, H4|x)
+                                // Compile the label.
+                      ScanLabels(H3+x)
+                      return
+
+    case IF:
+    case UNLESS:      Lookat(H2+x)
+                      unless lh H2|x > 0 do
+                      { ScanLabels(H3+x); return
+                       }
+                      if (rv lh H2|x ne false) eqv (Op eq IF)
+                      do Node := H3|x
+                      endcase
+
+    case UNTIL:
+    case WHILE:
+                      { let n := lv(H3|(H2|x))
+                                // Skip the LINE node.
+                        Lookat(n)
+                        n := rv n
+                        unless #400000 > lh n > 0 do
+                        { ScanLabels(H3+x); return
+                         }
+                        if (rv lh n ne false) eqv (Op eq WHILE)
+                        do Node := List2(REPEAT, H3|x)
+                        endcase
+                       }
+
+    case REPEATWHILE:
+    case REPEATUNTIL:
+                      { let n := lv ( H3|(H3|x) )
+                                // Skip the line node.
+                        Lookat(n)
+                        n := rv n
+                        unless lh n > 0 do
+                        { ScanLabels(H2+x); return
+                         }
+                        test (rv lh n ne false) eqv (Op eq REPEATWHILE) then Node :=
+                                                                               List2(REPEAT,
+                                                                                     H2|x)
+                        or Node:=H2|x
+                        endcase
+                       }
+
+    case TEST:        Lookat(H2+x)
+                      unless #400000 > lh H2|x > 0 do
+                      { ScanLabels(H3+x); ScanLabels(H4+x); return
+                       }
+                      Node := (rv lh H2|x => H3, H4)|x
+                      endcase
+
+    case LINE:        Curline := H2|x
+
+    case SWITCHON:
+    case BRANCHON:
+    case CASE:        ScanLabels(H3+x)
+                      return
+
+    case CASETO:      ScanLabels(H4+x)
+                      return
+
+    case DEFAULT:
+    case REPEAT:      ScanLabels(H2+x)
+                      return
+
+    case SEQ:         ScanLabels(H2+x)
+                      ScanLabels(H3+x)
+                      return
+   }
+
+// Executing "endcase" above leads here with something in Node.
+
+  unless Node eq 0 do ScanLabels(lv Node)
+  rv LVX := -1 ,, Node
+ }
+
+// Compile a jump to the label L if the expression  x  will have at run
+//-- time the same
+// truthvalue as does B now.
+
+and Jumpcond(x, B, L) be
+{ if #400000 > lh x > 0 do
+  { if (rv lh x ne false) eqv B do Compjump(L)
+    return
+   }
+
+  x := rh x
+  switchon H1|x into
+  { case NOT:    Jumpcond(H2|x, not B, L)
+                 return
+
+    case LOGAND: test B
+                 then
+                 { let M := NextParam(BlockA)
+                   Jumpcond(H2|x, false, M)
+                   Jumpcond(H3|x, true, L)
+                   Complab(M)
+                  }
+
+                 or
+                 { Jumpcond(H2|x, false, L)
+                   Jumpcond(H3|x, false, L)
+                  }
+                 return
+
+    case LOGOR:  test B then
+                 { Jumpcond(H2|x, true, L)
+                   Jumpcond(H3|x, true, L)
+                  }
+
+                 or
+                 { let M := NextParam(BlockA)
+                   Jumpcond(H2|x, true, M)
+                   Jumpcond(H3|x, false, L)
+                   Complab(M)
+                  }
+                 return
+
+    case NEQV:   B:=~B
+    case EQV:
+                 { let M,N:=NextParam(BlockA),NextParam(BlockA)
+                   Jumpcond(H2|x,B,M)
+                   Jumpcond(H3|x,false,L)
+                   Compjump(N)
+                   Complab(M)
+                   Jumpcond(H3|x,true,L)
+                   Complab(N)
+                   return
+                  }
+
+    case COND:
+                 { let M, N := NextParam(BlockA), NextParam(BlockA)
+                   Jumpcond(H2|x, false, M)
+                   Jumpcond(H3|x, B, L)
+                   Compjump(N)
+                   Complab(M)
+                   Jumpcond(H4|x, B, L)
+                   Complab(N)
+                   return
+                  }
+
+    default:     Load(x)
+                 Out2P(B => JT, JF, L)
+                 SSP := SSP - 1
+                 return
+   }
+ }
+
+// Load the R-values of a list of elements.  This routine is called
+//-- from
+// Trans, case RTAP
+// Load, case FNAP
+// in both cases to process the list of actual parameters.
+
+and Loadlist(x) be
+{ if x eq 0 return
+  x := rh x
+  if H1|x eq COMMA do
+  { Loadlist(H2|x)
+    Loadlist(H3|x)
+    return
+   }
+  if H1|x eq REPNAME do
+  { 
+{ let m_EvalConst(H3+x)
+unless 1 le m le 2000 do
+{ TransReport(37,x,0) ; m_1}
+for i := 1 to m do Loadlist(H2|x)
+}
+    return
+   }
+  Load(x)
+ }

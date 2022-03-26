@@ -1,0 +1,175 @@
+A Description of the BCPL Symbol Table, version 4.
+
+					Dan Halbert, 22-JUN-76
+
+
+Block A (or just A) refers to the section of object code
+that is pure code.
+Block B refers to the section of object code that is impure,
+e.g. static variable storage, etc.
+
+The structure SThead:
+.Length		Size of the symbol file in words, including this header.
+
+.Version	Which version of the symbol table?
+		Older versions do not have manifest types,
+		have different structure definition tables, etc.
+
+.Date		When was the file created?  (TENEX internal format)
+
+.FDN		Number of source files used in this symbol table.
+
+.FDB		Relative ptr to start of file list section,
+		which contains ptrs (one word each) into the .NameB
+		area, pointing to the strings that are the file names.
+
+.SDN		Length of the symbol descriptor block.  This block
+		contains symbol descriptors for each variable,
+		structure, etc. that is defined.
+
+.SDB		Relative ptr to the beginning of the symbol
+		descriptor block.
+
+.NameN		Size of the string storage area.  This area
+		contains all strings: file names, variable names, etc.
+
+.NameB		Relative ptr to base of the string area.
+
+.StructN	Size of structure information area.
+
+.StructB	Relative ptr to beginning of this area.
+
+.ComN		Size of command descriptor area.  This contains
+		entries for every command (statement) in the source
+		file.
+
+.ComB		Relative ptr to beginning of this area.
+
+.SlashUSW	File was compiled with /U switch: upper case
+		treated as lowercase, with @'s for shifting.
+
+Symbol Descriptors stored in the .SDB block
+
+The STsd (Symbol Table symbol descriptors) structure:
+
+.Type		What kind of symbol is it?
+
+.Data (no sign-extend)
+.SmallLocal (same field with sign-extend)
+		Used to store small numbers such as stack offsets,
+		global numbers, etc.
+
+.Name		Usually a ptr to the string that is the symbol
+		name.
+
+.ILCA		Usually the offset in Block A where the symbol's
+		scope starts.
+
+ The next word of this structure is either non-existent, used
+to store a single word of data (which I will call Word1), or used
+to store the following structure fields:
+
+.SType		If this is a static variable, what is its type?
+
+.Args		Number of arguments; used for functions and routines.
+
+
+		variable is stored (e.g. the offset of a static).
+
+Symbol Descriptors
+
+When Stsd.Type =
+		 (STmanifest through STstructure use both words
+		  of STsd.  STlocal through STfill use only the first
+		  word of STsd.  That is, the latter are one-word
+		  entries in the .SDB block.  One can tell the
+		  difference by examining the high order bit of
+		  .Type.  If it is 1 (.Type > 8), the symbol
+		  descriptor is a one-word entry in the .SDB block.
+		  Otherwise, it is a two-word entry.)
+
+STmanifest	.SmallLocal contains the type of manifest:
+
+		  STmanifestNUMBER
+			The value of the manifest is in Word1.
+
+		  STmanifestRV
+			rv N; N is in Word1.
+
+		  STmanifestLABEL
+			.ILCB contains the Block A offset of the
+			labelled command.
+
+		  STmanifestFUNCTION
+			.ILCB contains the Block A offset of the
+			beginning of the routine.
+
+
+STlocalbig	Word1 contains the stack offset for this local.
+
+STglobalbig	Word1 contais the global number.
+
+STstatic	.SType contains the type of static:
+
+		  STstaticvar
+			.ILCB contains the Block B offset of the
+			variable.
+
+		  STstaticfunction
+			.ILCB contains the Block B offset of where
+			the function address is stored.
+			.Args has the maximum number of arguments
+			the function takes.
+
+		  STstaticroutine
+			Same as STstaticfunction.
+
+		  STstaticlabel
+			.ILCB contains the Block B offset of where
+			the label value is stored.
+
+
+STstructure	Word1 is a relative offset into the .StructB section
+		of the symbol table, where the structure
+		information is stored.
+
+STlocal		.SmallLocal contains the stack offset of this 
+		variable.
+
+STglobal	.Data contains the global number.
+
+STparam		.SmallLocal contains the stack offset of the formal
+		parameter to a routine.
+
+STindex		.Data contains the register number. (???)
+
+STsectket	.ILCA contains the offset in Block A where the
+		close-brace (possibly implicit) signifying the end
+		of this block occurred.
+		.Name contains an offset from .SDB which corresponds
+		to the first symbol defined in the block that was
+		just closed.
+
+STfill		Used to indicate a dummy one-word entry.  Needed to
+		force even-address boundaries for double-word entries.
+
+Command Descriptors used in the .ComnB area
+
+The structure STcdc is used to indicate commands:
+
+.Type		=0 always to indicate that this is STcdc, not STcds.
+
+.SFD		Index into the .FDB area.
+
+.ILCA		Offset in Block A where this command starts.
+
+.Word		Byte number in source file where this command starts.
+
+The structure STcds is used to indicate changes in the framebase
+(stack offset):
+
+.Type		=1 always to indicate that this is STcds, not STcdc.
+
+.ILCA		Offset in Block A of this command.
+
+.Offset		The new stack offset.

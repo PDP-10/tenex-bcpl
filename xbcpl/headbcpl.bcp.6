@@ -1,0 +1,132 @@
+
+// Declarations for the BCPL Compiler, used throughout the Compiler.
+
+global
+{
+// Jim Miller's statics, in HANDCD
+
+  jimtbptr:             #502
+  jimbytptr:            #513
+  jimtbl:               #514
+
+// NLEX2 statics
+
+  RequestTable:         #515
+  RequireTable:         #523
+  DebugSW:              #525
+
+// NMAIN2 statics
+
+  SWupper:              #554
+  SWbits:               #500
+  Reportcount:          #501
+  MONITOR:              #503
+  GetnameV:             #504
+  ConsoleStream:        #561
+  Cautions:             #562
+  GetnameP:             #505
+  ExtDecl:              #506
+  ExtDeclS:             #507
+  StaticN:              #510
+  NextParameter:        #511
+  Ocode:                #512
+  Curline:              #517
+  Curfile:              #520
+  Warns:                #521
+
+// NMAIN1 routines
+
+  Abort:                #516
+  Newvec:               #547
+ruppersptr:#557
+suppersptr:#560
+
+// NMAIN2 routines
+
+  NextParam:            #522
+  WriteChar:            #524
+  Plist:                #526
+  List1:                #527
+  List2:                #530
+  List3:                #531
+  List4:                #532
+  List5:                #533
+  List6:                #534
+  Wfline:               #550
+  BCPLreport:           #551
+
+// NMAIN3 routines
+
+  SymtabInit:           #535
+  SymtabStoreSymbol:    #536
+  SymtabNextN:          #537
+  SymtabStoreEnd:       #540
+  SymtabStoreArgs:      #541
+  SymtabTransEnd:       #542
+  SymtabStoreILC:       #543
+  SymtabStoreCommand:   #544
+  SymtabStoreStack:     #545
+  SymtabFinish:         #546
+
+// Major routines in CAE, TRN, and CG
+
+  ConstructTree:        #552    // in CAE0
+  TranslateTree:        #553    // in TRN0
+  Cg:                   #555    // in CG0
+ }
+
+manifest
+{
+// Selectors for tree node elements
+ H1  :=          0
+  H2  :=          1
+  H3  :=          2
+  H4  :=          3
+  H5  :=          4
+  H6  :=          5             // Selectors for tree nodes.
+
+  NAMELENGTH  :=  23
+  ExtDeclN  :=    2
+  GetFileMax  :=  16
+  CaseMax  :=     150
+
+  GlobNMax  :=    #1777	//Maximum allowed global number
+  RequireSize  := 100           // #regs
+  RequestSize  := 20            // #regs
+  ExtDeclT  :=    300 * ExtDeclN
+  GetnameT  :=    2 * GetFileMax - 1
+ }
+
+structure                       // Option bits.
+{ SW
+  { Symtab bitb
+    Ocode bitb
+    Debug bitb
+    Help bitb
+    Ncs bitb
+    Synrep bitb
+    Pprep bitb
+    SymtabLong bitb
+    Bss bitb
+    MACfil bitb
+   }
+
+  String                        // BCPL string.
+  { n byte                      // Length in chars.
+    c^511 char
+   }
+ }
+
+manifest
+{                               // Specification of PDP-10 -- the
+                                //-- machine on which the compiler
+                                //-- runs.
+  Bitsperbyte  :=   9
+  Bytebits  :=      9
+  Bytesperword  :=  4
+  Bitsperword  :=   36
+  StringLength  :=  511
+  StringMaxOb  :=   511
+  Endofstreamch  := #777
+
+ }

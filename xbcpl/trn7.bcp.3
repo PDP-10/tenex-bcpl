@@ -1,0 +1,113 @@
+
+// BCPL Compiler -- Trans, Part 7.
+
+// Pures  Code that follows is pure procedure.
+// Impures  Code that follows is impure.
+// Complab  Output a label.
+// Compentry Output an entry point.
+// Compdatalab Output a data label.
+// Compjump Output a jump to a label.
+// Out1  Output a single operation.
+// Out2  Output an op with a numeric parameter.
+// Out2P  Output an op with a label parameter.
+// Out3P  Output an op with a numeric parameter and a label parameter.
+// Out1C  Output an op with a 1-byte parameter.
+// OutN  Output a number.
+// OutL  Output a label.
+// OutC  Output a character.
+// *W  output an item.
+// *Write4  output a number.
+// *Write2  output a label.
+// *Set  set BlockIn to BlockWanted and tell the code generator.
+// * local to this file.
+
+get "<bcpl>head"
+get "<XBCPL>headtrn"            // Declarations for TRANS.
+
+static                          // Switches used by the following
+                                //-- routines.
+{ BlockIn :     0               // The block we are currently compiling
+                                //-- in.
+  BlockWanted : 0               // The block we think we want to be in.
+ }
+
+let Pures() be
+BlockWanted := 0
+
+and Impures() be
+BlockWanted := 1
+
+and Complab(L) be
+Out2P(LAB, L)
+
+and Compentry(N, L) be
+{ let V := vec NAMELENGTH
+  Unpackstring(H2|N, V)
+  Out3P(ENTRY, V|0, L)
+  for i := 1 to V|0 do OutC(V|i)
+ }
+
+and Compdatalab(L) be
+Out2P(DATALAB, L)
+
+and Compjump(L) be
+Out2P(JUMP, L)
+
+and Out1(x) be
+W(x)
+
+and Out2(x,y) be
+{ W(x)
+  Write4(y)
+ }
+
+and Out2P(x,y) be
+{ W(x)
+  Write2(y)
+ }
+
+and Out3P(x,y,z) be
+{ W(x)
+  Write4(y)
+  Write2(z)
+ }
+
+and Out1C(Op, B) be
+{ W(Op); W(B)
+ }
+
+and OutN(x) be
+Write4(x)
+
+and OutL(x) be
+Write2(x)
+
+and OutC(x) be
+W(x)
+
+// The following local routines do the actual storing.
+
+and W(x) be
+{ unless BlockIn eq BlockWanted do Set()
+  Writech(Ocode, x)
+ }
+
+and Write4(x) be
+{ unless BlockIn eq BlockWanted do Set()
+  Writech(Ocode,q4 x)
+  Writech(Ocode,q3 x)
+  Writech(Ocode,q2 x)
+  Writech(Ocode,q1 x)
+ }
+
+and Write2(x) be
+{ unless BlockIn eq BlockWanted do Set()
+  Writech(Ocode,q2 x)
+  Writech(Ocode,q1 x)
+ }
+
+and Set() be
+{ Writech(Ocode, BLOCK); Writech(Ocode, BlockWanted)
+  BlockIn := BlockWanted
+ }
+

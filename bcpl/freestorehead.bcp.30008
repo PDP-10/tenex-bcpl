@@ -1,0 +1,10 @@
+	// freestorehead.b
+
+global{
+	GetBlock:8117
+	RetBlock:8118
+	GetStorageSpace:8119
+       ResetFreeStore:8120
+ }
+
+

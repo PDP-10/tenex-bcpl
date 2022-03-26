@@ -1,0 +1,502 @@
+
+// BCPL Compiler -- Part 5 of Trans.
+
+// Load  Load the value of an expression.
+// *LoadFOP  Load a floating point arithmetic operation.
+// LoadLV  Load the L-value of an expression.
+// * local to this file.
+
+get "<bcpl>head"
+get "<XBCPL>headtrn"            // Declarations for TRANS.
+
+let Load(x) be
+{ if #400000 > lh x > 0 do      // An evaluated expression.
+  { SSP := SSP + 1
+    if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+    test H1|rh x eq NIL         // Is it a NIL node?
+    ifso Out2(STACK, SSP)       // Yes.  Tell CG.
+    ifnot Out2(LN, rv lh x)     // No.  Load the number.
+    return
+   }
+  x := rh x
+  if x eq 0 do
+  { TransReport(148, x, 0)
+    SSP := SSP + 1
+    if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+    return
+   }
+
+  let Op := H1|x
+  switchon Op into
+  { default:          TransReport(147, x, 0)
+                      SSP := SSP + 1
+                      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                      return
+
+    case LINE:
+                      { let CL := Curline; Curline := H2|x
+                        Out2(LINE, Curline)
+                        Load(H3|x)
+                        Curline := CL
+                        return
+                       }
+
+// Following are the non-commutative infix binary operators.
+
+    case MINUS:
+    case LS:
+    case GR:
+    case LE:
+    case GE:
+    case LSHIFT:
+    case RSHIFT:
+    case LSCALE:
+    case RSCALE:
+    case FMINUS:
+    case FDIV:
+    case FLS:
+    case FGR:
+    case DIV:
+    case REM:
+    case COMCOM:
+                      Load(H2|x)
+                      Load(H3|x)
+                      Out1(Op)
+                      SSP := SSP - 1
+                      return
+
+// Following are the commutative infix binary operators.
+
+    case VECAP:
+    case MULT:
+    case PLUS:
+    case EQ:
+    case NE:
+    case LOGAND:
+    case LOGOR:
+    case EQV:
+    case NEQV:
+    case EQUIV:
+    case NEQUIV:
+    case FPLUS:
+    case FMULT:
+    case FEQ:
+                      { let A, B := rh H2|x, rh H3|x
+                        if H1|A eq NAME \ H1|A eq NUMBER do
+                                                            // Load the
+                                                            //-- simple
+                                                            //-- one
+                                                            //-- first.
+                        { let t := A; A := B; B := t
+                         }
+                        Load(A)
+                        Load(B)
+                        test Op eq VECAP then { Out1(PLUS); Out1(RV) }
+                        or Out1(Op)
+                        SSP := SSP - 1
+                        return
+                       }
+
+    case RIGHTLUMP:
+    case LEFTLUMP:
+                      { let L := Op eq LEFTLUMP
+                                // Which lump?
+                        Load(H2|x)
+                                // The pointer (>>) or the object (<<).
+                        let V := DoQualName(H3|x, false, L, false)
+                                // Process the offset - no M_1 if L.
+                        let N := V << QN.N
+                                // The constant part of the offset.
+                        switchon V << QN.M into
+                                // What sort of thing has been loaded?
+                        { case 1:
+                                // Word offset loaded.
+                            Out1(PLUS)
+                                // Add the offset to the pointer.
+                          case 0:
+                                // Nothing loaded.
+                            Out2(LN, N)
+                                // Load the constant offset.
+                            endcase
+                          case 2:
+                                // Bit offset loaded.
+                            unless N eq 0 do
+                            { Out2(LN, N); Out1(PLUS)
+                             }  // Add the constant part.
+                         }
+                        let T := V << QN.T
+                                // The access type.
+                        Out1( (L => (table CFG,
+                                           CFGN,
+                                           CFGB), (table RVC,
+                                                         RVCN,
+                                                         RVCB)) | T )
+                        unless T eq 2 do OutC(V << QN.W)
+                                         // Width, unless bitb.
+                        SSP := SSP - 1
+                        return
+                       }
+
+    case CSIZE:       Out2(LN,EvalSize(H2|x)/WordSizeOb+1)
+                      SSP:=SSP+1
+                      if PDRMAXSSP<SSP do PDRMAXSSP:=SSP
+                      return
+
+    case SIZE:        Out2(LN, EvalSize(H2|x))
+                      SSP := SSP + 1
+                      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                      return
+
+    case OFFSET:
+                      { let V := DoQualName(H2|x, true, true, false)
+                                // Process the offset -- wide OK, no
+                                //-- M_1.
+                        let N := V << QN.N
+                                // The constant part of the offset.
+                        switchon V << QN.M into
+                                // What sort of thing was loaded?
+                        { case 0:
+                                // Nothing loaded.
+                            Out2(LN, N); endcase
+
+                                // Load N.
+                          case 2:
+                                // Bit offset loaded.
+                            unless N eq 0 do
+                            { Out2(LN, N); Out1(PLUS)
+                             }  // Add N.
+                         }
+                        SSP := SSP + 1
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        return
+                       }
+
+    case NEG:
+    case FNEG:
+    case NOT:
+    case RV:
+    case RHZ:
+    case LHZ:
+    case Q1Z:
+    case Q2Z:
+    case Q3Z:
+    case Q4Z:
+    case RH:
+    case LH:
+    case Q1:
+    case Q2:
+    case Q3:
+    case Q4:
+                      Load(H2|x)
+                      Out1(Op)
+                      return
+
+    case NUMBARGS:
+    case LEFTSIDE:    unless FunctionBody \ RoutineBody
+                      do TransReport(157, x, 0)
+
+    case TRUE:
+    case FALSE:       Out1(Op)
+                      SSP := SSP + 1
+                      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                      return
+
+    case NIL:         SSP := SSP + 1
+                      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                      Out2(STACK, SSP)
+                      return
+
+    case LV:          LoadLV(H2|x)
+                      return
+
+    case ERROR:                 // He evidently wants an error message
+                                //-- in TRANS.
+                      TransReport(2,,156, 0, 0)
+                                // Oblige him.
+                      return
+
+    case NUMBER:      Out2(LN, H2|x)
+                      SSP := SSP + 1
+                      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                      return
+
+    case CHARCONST:   Out2(LC, H2|x)
+                      SSP := SSP + 1
+                      if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                      return
+
+    case STRINGCONST:
+    case ASCIZCONST:
+                      { let v := vec StringMaxOb
+                        Unpackstring(lv H2|x, v)
+                        Out2((Op=ASCIZCONST)=> LZTR,LSTR, v|0)
+                        for i := 1 to v|0 do OutC(v|i)
+                        SSP := SSP + 1
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        return
+                       }
+
+    case NAME:
+                      { let t := CellWithName(x)
+                                // Location in the name table.
+                        let N := Dvec|(t+1)
+                                // The datum associated with the name.
+                        SSP := SSP + 1
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        if t eq 0 do
+                                     // The name has not been declared.
+                        { TransReport(115, 0, H2|x, 0)
+                                // Complain about it.
+                          AddName(x, LOCAL, 0); DvecE := DvecS
+                                // Declare it local so no more
+                                //-- complaints.
+                          return
+                         }
+                        switchon lh Dvec|t into
+                                // What type of name is it?
+                        { default:
+                            TransReport(123, 0, H2|x, 0)
+                            return
+
+                          case NUMBER:
+                            Out2(LN, N)
+                            return
+
+                          case EXT:
+                            N := rh N
+                                // The entry in ExtDecl.
+                            if N eq -1 do N := EnterExt(t)
+                                          // Not yet there, so enter
+                                          //-- it.
+                            Out2P(LL, rh ExtDecl|(N+1))
+                                // Load the relevant label.
+                            return
+
+                          case LOCAL:
+                            if t < DvecP & N ne 0
+                            do TransReport(116, 0, H2|x, 0)
+                                // Non-local dynamic.
+                            Out2(LP, N); return
+
+                          case INDEX:
+                            Out2(LX, N)
+                            return
+
+                          case GLOBAL:
+                            Out2(LG, N)
+                            return
+
+                          case LABEL:
+                            Out2P(LL, N)
+                            return
+                         }
+                       }
+
+    case VALOF:
+                      { let DS, DE := DvecS, DvecE
+                        and RL := Resultlabel
+                        and VB := ValofBlock
+                        Resultlabel := NextParam(BlockA)
+                        ValofBlock := true
+                        Decllabels(H2|x)
+                        Trans(H2|x)
+                        Complab(Resultlabel)
+                        Out2(RSTACK, SSP)
+                        SSP := SSP + 1
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        DvecS, DvecE := DS, DE
+                        Resultlabel := RL
+                        ValofBlock := VB
+                        return
+                       }
+
+    case FNAP:
+                      { if H1|(H2|x)=RNAME do
+                        { let S:=SSP
+                          let ln:=(H3|x=0)=>0,ListLength(H3|x)
+                          Out1(RNAME)
+                          Loadlist(H3|x)
+                          Out3P(RFNAP,(rv H2|(H2|x)) rshift 22,ln)
+                          SSP:=S+1
+                          if PDRMAXSSP < SSP do PDRMAXSSP:=SSP
+                          return
+                         }
+                        let S := SSP
+                        SSP := SSP + Savespacesize
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        Out2(STACK, SSP-1)
+                        Out2(NUMBARGS,(H3|x=0)=>0,ListLength(H3|x))
+                        Loadlist(H3|x)
+                        Load(H2|x)
+                        Out2(FNAP, S)
+                        SSP := S + 1
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        return
+                       }
+
+    case COND:
+                      { let L, M :=
+                          NextParam(BlockA), NextParam(BlockA)
+                        let S := SSP
+                        Jumpcond(H2|x, false, M)
+                        Load(H3|x)
+                        Out2P(RES, L)
+                        SSP := S
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        Complab(M)
+                        Load(H4|x)
+                        Out2P(RES, L)
+                        Complab(L)
+                        Out2(RSTACK, S)
+                        SSP := S+1
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        return
+                       }
+
+    case TABLE:
+                      { let M := NextParam(BlockB)
+                        SaveStaticItem(x, M)
+                        Out2P(LLL, M)
+                        SSP := SSP + 1
+                        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+                        return
+                       }
+   }
+ }
+
+// Load the L-value of a suitable expression.  This routine is called
+//-- from
+// Simpass, for RV, VECAP or LEFTLUMP to the left of an assignment
+// Load, for case LV
+
+and LoadLV(x) be
+{ if x eq 0 do Err:
+  { TransReport(113, x, 0)      // Error in operand of lv.
+    SSP := SSP + 1
+    if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+    return
+   }
+
+  switchon H1|x into
+  { default:
+       goto Err
+
+    case NAME:
+       { let t := CellWithName(x)
+                                // Location in name table.
+         SSP := SSP + 1
+         if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+         if t eq 0 do           // The name has been used but not
+                                //-- declared.
+         { TransReport(115, 0, H2|x, 0)
+                                // Complain.
+           AddName(x, LOCAL, 0); DvecE := DvecS
+                                // Declare it, so no more error
+                                //-- messages.
+           return
+          }
+         let N := Dvec|(t+1)    // The datum associated with the name.
+         switchon lh Dvec|t into
+                                // Branch on the type of name it is.
+         { case LOCAL:
+             if t < DvecP & N ne 0 do TransReport(116, 0, H2|x, 0)
+                                      // Non-local dynamic.
+             Out2(LLP, N)
+             return
+
+           case EXT:
+             N := rh N          // The entry in ExtDecl.
+             if N eq -1 do N := EnterExt(t)
+                                // Not yet there, so enter it.
+             Out2P(LLL, rh ExtDecl|(N+1))
+             return
+
+           case GLOBAL:
+             Out2(LLG, N)
+             return
+
+           case LABEL:
+             Out2P(LLL, N)
+             return
+
+           default:
+             TransReport(122, x, H2|x, 0)
+                                // Bad sort of name -- INDEX, NUMBER or
+                                //-- STRUCTURE.
+             return
+          }
+        }
+
+    case RV:
+       Load(H2|x)
+       return
+
+    case VECAP:
+       { let A, B := H2|x, H3|x
+         if H1|x eq NAME do A, B := H3|x, H2|x
+         Load(A)
+         Load(B)
+         Out1(PLUS)
+         SSP := SSP - 1
+         return
+        }
+
+    case COND:                  // lv of a conditional expression.
+       { let S := SSP
+         and ResLabel, FalseArm :=
+           NextParam(BlockA), NextParam(BlockA)
+         Jumpcond(H2|x, false, FalseArm)
+                                // Hop to the false arm if conditional
+                                //-- is false.
+         LoadLV(H3|x)           // Load the lv of the true arm
+                                //-- expression.
+         Out2P(RES, ResLabel)   // Hop to the RESlabel with the value
+                                //-- in hand.
+         SSP := S
+         if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+         Complab(FalseArm)      // Place the label for the false arm.
+         LoadLV(H4|x)           // Load the lv of the false arm
+                                //-- expression.
+         Out2P(RES, ResLabel)   // Hop to the RESlabel with the value
+                                //-- in hand.
+         Complab(ResLabel)      // Place the RESlabel.
+         Out2(RSTACK, S)        // Restore the code generator"s
+                                //-- simulated stack pointer.
+         SSP := S + 1
+         if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+         return
+        }
+
+    case LEFTLUMP:              // lv (X << QN)   What does it mean?
+       TransReport(2,,179, x, 0)
+                                // Warn him.
+       LoadLV(H2|x)             // Return the lv of X.
+       return
+
+    case RIGHTLUMP:             // lv (P >> QN)
+       { Load(H2|x)             // Load the pointer P.
+         let V := DoQualName(H3|x, true, false, false)
+                                // Process the offset -- wide OK.
+         let N := V << QN.N     // The constant part of the offset.
+         switchon V << QN.M into
+                                // What sort of thing was loaded?
+         { case 1:              // Word offset loaded.
+             Out1(PLUS)         // Add it to the pointer.
+           case 0:              // Nothing loaded.
+             N := N / WordSizeOb
+                                // Number of words.
+             unless N eq 0 do { Out2(LN, N); Out1(PLUS) }
+                                // Add N.
+             endcase
+
+           case 2:              // Bit offset loaded.
+             unless N eq 0 do { Out2(LN, N); Out1(PLUS) }
+                                // Add N.
+             Out2(LN, WordSizeOb); Out1(DIV)
+                                // Divide to get number of words.
+             Out1(PLUS)         // Add it to the pointer.
+          }
+         SSP := SSP - 1
+        }
+   }
+ }

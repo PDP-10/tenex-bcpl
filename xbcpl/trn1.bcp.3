@@ -1,0 +1,425 @@
+
+// BCPL Compiler -- Trans, Part 1.
+
+// Trans  Translate a piece of AE-Tree into OCODE.
+// *DeclareAll Translate a declaration (other than LET).
+// *DeclareMIG Do the work for MANIFEST, INDEX or GLOBAL.
+// *DeclareStatic Do the work for a STATIC declaration.
+// *local to this file.
+
+get "<XBCPL>headtrn"            // Declarations for Trans.
+get "<XBCPL>headsymb"           // Symbol-table declarations.
+
+let Trans(x) be
+{ x := rh x
+  if x eq 0 return
+  switchon H1|x into
+  { case LET:
+      TransLET(x)
+      return
+
+    case EXT:
+      DeclareAll(x, DeclExtList, nil)
+      return
+
+    case GLOBAL:
+      DeclareAll(x, DeclareMIG, (table GLOBAL,
+                                       STglobal))
+      return
+
+    case INDEX:
+      DeclareAll(x, DeclareMIG, (table INDEX,
+                                       STindex))
+      return
+
+    case MANIFEST:
+      DeclareAll(x, DeclareMIG, (table NUMBER,
+                                       STmanifest))
+      return
+
+    case STRUCTURE:
+      DeclareAll(x, TransStructDecl, nil)
+      return
+
+    case STATIC:
+      DeclareAll(x, DeclareStatic, nil)
+      return
+
+    case LINE:
+      Curline := H2|x
+      Out2(LINE, Curline)
+      Trans(H3|x)
+      return
+
+    case ASS:
+      { let S := SSP
+        Lookat(H2+x); Lookat(H3+x)
+        unless Assign(H2|x, H3|x, 0) eq 0 do TransReport(110, x, 0)
+                                             // Expression list too
+                                             //-- short.
+        return
+       }
+
+    case RTAP:
+      { if H1|(H2|x)=RNAME do
+        { let S:=SSP
+          Lookat(H3+x)
+          Out1(RNAME)
+          let ln:=(H3|x=0)=>0,ListLength(H3|x)
+          Loadlist(H3|x)
+          Out3P(RRTAP,(rv H2|(H2|x)) rshift 22,ln)
+          SSP:=S
+          return
+         }
+        let S := SSP
+        SSP := SSP + Savespacesize
+        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+        Out2(STACK, SSP-1)
+        Lookat(H2+x); Lookat(H3+x)
+        Out2(NUMBARGS,(H3|x=0)=>0,ListLength(H3|x))
+        Loadlist(H3|x)
+        Load(H2|x)
+        Out2(RTAP, S)
+        SSP := S
+        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+        return
+       }
+
+    case GOTO:
+      Lookat(H2+x); Load(H2|x)
+      Out1(H1|x)
+      SSP := SSP - 1
+      return
+
+    case COLON:
+      Complab(H4|x)
+      Out2(STACK, SSP)
+      Trans(H3|x)
+      return
+
+    case IF:
+    case UNLESS:
+      { let Op := H1|x
+        let L := NextParam(BlockA)
+        Jumpcond(H2|x, Op eq UNLESS, L)
+        Trans(H3|x)
+        Complab(L)
+        return
+       }
+
+    case TEST:
+      { let L, M := NextParam(BlockA), NextParam(BlockA)
+        Jumpcond(H2|x, false, L)
+        Trans(H3|x)
+        Compjump(M)
+        Complab(L)
+        Trans(H4|x)
+        Complab(M)
+        return
+       }
+
+    case BREAK:
+      unless RepeatBlock do TransReport(180, x, 0)
+      if Breaklabel eq 0 do Breaklabel := NextParam(BlockA)
+      Compjump(Breaklabel)
+      return
+
+    case LOOP:
+      unless RepeatBlock do TransReport(180, x, 0)
+      if Looplabel eq 0 do Looplabel := NextParam(BlockA)
+      Compjump(Looplabel)
+      return
+
+    case RETURN:
+      unless RoutineBody do TransReport(181, x, 0)
+      Out1(RTRN)
+      return
+
+    case FINISH:
+    case ABORT:
+      Out1(H1|x)
+      return
+
+    case RESULTIS:
+      Lookat(H2+x); Load(H2|x)
+      if Resultlabel eq 0 do TransReport(153, x, 0)
+                                // Error report.
+      Out2P(RES, Resultlabel)
+      SSP := SSP - 1
+      return
+
+    case WHILE:
+    case UNTIL:
+      { let L := NextParam(BlockA)
+                                // Label for the beginning of the
+                                //-- block, to jump back to.
+        let LL, BL := Looplabel, Breaklabel
+        and RB := RepeatBlock
+        RepeatBlock := true     // break and loop are now legal.
+        Looplabel := NextParam(BlockA)
+        Breaklabel := 0
+        Compjump(Looplabel)     // Jump to the test.
+        Complab(L)
+        Trans(H3|x)
+        Complab(Looplabel)
+        let T := H2|x           // The boolean being tested.
+        if H1|T eq LINE do
+        { Curline := H2|T; Out2(LINE, Curline); T := H3|T
+         }
+        Jumpcond(T, H1|x eq WHILE, L)
+        unless Breaklabel eq 0 do
+        { Complab(Breaklabel); Out2(STACK, SSP)
+         }
+        Breaklabel, Looplabel := BL, LL
+        RepeatBlock := RB
+        return
+       }
+
+    case REPEAT:
+    case REPEATWHILE:
+    case REPEATUNTIL:
+      { let L := NextParam(BlockA)
+                                // Label for the beginning of the
+                                //-- block.
+        let LL, BL := Looplabel, Breaklabel
+        and RB := RepeatBlock
+        RepeatBlock := true
+        Breaklabel := 0
+        Looplabel := H1|x eq REPEAT => L, 0
+        Complab(L)
+        Trans(H2|x)
+        test H1|x eq REPEAT
+        ifso Compjump(L)
+        ifnot
+        { unless Looplabel eq 0 do Complab(Looplabel)
+          let T := H3|x         // The expression.
+          if H1|T eq LINE do
+          { Curline := H2|T; Out2(LINE, Curline); T := H3|T
+           }
+          Jumpcond(T, H1|x eq REPEATWHILE, L)
+         }
+        unless Breaklabel eq 0 do
+        { Complab(Breaklabel); Out2(STACK, SSP)
+         }
+        Looplabel, Breaklabel := LL, BL
+        RepeatBlock := RB
+        return
+       }
+
+    case CASE:
+      { unless SwitchBlock do TransReport(182, x, 0)
+        if CaseP + CaseN > CaseT do { TransReport(141, 0, 0); return }
+                                // Too many cases.
+        let L := NextParam(BlockA)
+                                // The label for this piece of code.
+        Casetable|CaseP := EvalConst(H2+x)
+                                // The case constant.
+        Casetable|(CaseP+1) := L
+        Casetable|(CaseP+2) := H4|x
+                                // The line number.
+        CaseP := CaseP + CaseN
+        Complab(L)              // Place the label.
+        Trans(H3|x)
+        return
+       }
+
+    case CASETO:                // Case label with limits.
+      { unless SwitchBlock do TransReport(182, x, 0)
+                                // Must be in a switch block.
+        let M := NextParam(BlockA)
+                                // The label the cases refer to.
+        let L, U := EvalConst(H2+x), EvalConst(H3+x)
+                                // The limits.
+        let N := U - L + 1      // Number of cases to generate.
+        unless N > 0 do { TransReport(145, x, 0); return }
+                                // Oops.
+        unless CaseP + CaseN*N le CaseT do
+        { TransReport(141, 0, 0); return
+         }
+        for k := 0 to N-1 do    // Place the cases.
+        { Casetable| CaseP := L + k
+                                // The value.
+          Casetable|(CaseP+1) := M
+                                // The label.
+          Casetable|(CaseP+2) := H5|x
+                                // The line number.
+          CaseP := CaseP + CaseN
+         }
+        Complab(M)              // Place the label.
+        Trans(H4|x)
+        return
+       }
+
+    case DEFAULT:
+      unless SwitchBlock do TransReport(182, x, 0)
+                                // Not in a switch block.
+      unless Defaultlabel eq 0 do TransReport(101, x, 0)
+                                  // default used twice.
+      Defaultlabel := NextParam(BlockA)
+      Complab(Defaultlabel)
+      Trans(H2|x)
+      return
+
+    case ENDCASE:
+      if Endcaselabel eq 0 do { TransReport(183, x, 0); return }
+                                // Not in a switch block.
+      Compjump(Endcaselabel)
+      return
+
+    case BRANCHON:
+    case SWITCHON:
+      Transswitch(x)
+      return
+
+    case FOR:
+      { let E, S := DvecE, DvecS
+                                // Prepare to do a declaration.
+        and LL, BL := Looplabel, Breaklabel
+        and RB, SB := RepeatBlock, SwitchBlock
+        let ST := SymtabNextN() // For symbol table block end.
+        Looplabel, Breaklabel := 0, 0
+        RepeatBlock, SwitchBlock := true, false
+        let L := NextParam(BlockA)
+                                // Label for the test.
+        and M := NextParam(BlockA)
+                                // Label for the body.
+        let S1 := SSP           // The stack position into which the
+                                //-- controlled variable goes.
+        Lookat(H3+x); Load(H3|x)
+                                // Load the lower limit into the stack.
+        let Stepsize := H5|x eq 0 => 1, EvalConst(H5+x)
+                                // The increment.
+        let S2 := SSP           // The stack position for the upper
+                                //-- limit.
+        and Limit := nil        // The value of the upper limit, if it
+                                //-- is a constant.
+        Lookat(H4+x)            // Optimize the upper limit.
+        test #400000 > lh H4|x > 0
+                                // Is its value known at compile time?
+        ifso S2, Limit := -1, rv lh H4|x
+                                // Yes, so set S2 < 0 as a switch.
+        ifnot Load(H4|x)        // No, so load it into stack position
+                                //-- S2.
+        Out1(STORE)
+        Compjump(L)             // Jump to the test.
+        AddName(H2|x, LOCAL, S1)
+                                // Declare the controlled variable.
+        if SWbits << SW.Symtab do EnterSymbol(H2|x, STlocal, S1)
+                                  // Symbol table entry.
+        DvecE := DvecS          // Make it known.
+        Complab(M)              // The label for the body.
+        Decllabels(H6|x)        // Compile the body.
+        Trans(H6|x)             // ...
+        unless Looplabel eq 0 do Complab(Looplabel)
+        Out2(LP, S1)            // Load the controlled variable.
+        Out2(LN, Stepsize); Out1(PLUS); Out2(SP, S1)
+                                // Add the step size and store back.
+        Complab(L)              // Label the test.
+        Out2(LP, S1)            // Load the controlled variable.
+        test S2 > 0
+        ifso Out2(LP, S2)
+        ifnot Out2(LN, Limit)   // Load the upper limit.
+        let Inc := Stepsize > 0
+        Out1(Inc => LE, GE); Out2P(JT, M)
+                                // The appropriate test.
+        unless Breaklabel eq 0 do Complab(Breaklabel)
+        SSP := S1               // Put it back.
+        if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+        Out2(STACK, SSP)
+        if SWbits << SW.Symtab do EnterEnd(ST)
+        DvecE, DvecS := E, S
+        Breaklabel, Looplabel := BL, LL
+        RepeatBlock, SwitchBlock := RB, SB
+        return
+       }
+
+    case SEQ:
+      Trans(H2|x)
+      Trans(H3|x)
+      return
+
+    default:
+      TransReport(100, x, 0)    // Error report.
+   }
+ }
+
+and DeclareAll(x, Function, Data) be
+                                // Process a declaration.
+{ let DE, DS := DvecE, DvecS    // Save pointers into Dvec.
+  and S := SSP                  // Save the current simulated stack
+                                //-- pointer.
+  and ST := SymtabNextN()       // Where the first symbol table entry
+                                //-- goes.
+  let SB := SwitchBlock         // Were we in a switch block?
+  SwitchBlock := false          // Now we aren"t.
+
+  Function(H2|x, Data)          // Do all the work of the declarations.
+  CheckDistinct(DS, DvecS)      // Be sure that all names declared are
+                                //-- distinct.
+  DvecE := DvecS                // Make the names known in the
+                                //-- following block.
+
+  Decllabels(H3|x)              // Declare possible labels in the
+                                //-- following block.
+  Trans(H3|x)                   // Translate the block.
+
+  DvecE, DvecS := DE, DS        // Restore Dvec pointers...
+  SSP := S                      // ...and SSP...
+  if PDRMAXSSP < SSP do PDRMAXSSP := SSP
+  SwitchBlock := SB             // ...and SwitchBlock.
+  if SWbits << SW.Symtab do EnterEnd(ST)
+                                // Enter section end into the symbol
+                                //-- table.
+ }
+
+and DeclareMIG(x, Data) be      // Do the work for a MANIFEST, INDEX or
+                                //-- GLOBAL declaration.
+{ if H1|x eq LINE do { Curline := H2|x; x := H3|x }
+  unless H2|x eq 0 do
+  { let CL := Curline; DeclareMIG(H2|x, Data); Curline := CL
+   }
+  let N := EvalConst(H4+x)      // Evaluate the right side of the
+                                //-- definition.
+  if Data|0=GLOBAL
+  do unless 0 le N le GlobNMax do
+     { TransReport(401,x,0) ; N:=GlobNMax
+      }
+  if Data|0 eq INDEX do         // About to declare an index register.
+  unless 0 le N le #77 do { TransReport(132, x, 0); N := #10 }
+                                // Index register out of range.
+  AddName(H3|x, Data|0, N)      // Declare the item.
+  if SWbits << SW.Symtab do EnterSymbol(H3|x, Data|1, N)
+                                // Enter the item into the symbol
+                                //-- table.
+  if Data|0 eq NUMBER do DvecE := DvecS
+                                // Make this name known to subsequent
+                                //-- expressions.
+ }
+
+and DeclareStatic(x) be         // Do the work for a STATIC
+                                //-- declaration.
+{ if H1|x eq LINE do { Curline := H2|x; x := H3|x }
+  unless H2|x eq 0 do
+  { let CL := Curline; DeclareStatic(H2|x); Curline := CL
+   }
+  DeclStat(H3|x, STstaticYYYYvar)
+                                // Declare the item to be static.
+  let t := H4|x                 // The value of the item.
+  switchon H1|t into            // What sort of value is it?
+  { case TABLE:
+    case VEC:
+    case STRINGCONST:
+    case ASCIZCONST:
+      { let L :=
+          NextParam(((H1|t eq STRINGCONST)\(H1|t=ASCIZCONST)) => BlockA,
+                    BlockB)
+        Out2P(ITEMNL, L)        // The data label the item will have.
+        SaveStaticItem(t, L)    // Remember to output this item at the
+                                //-- end.
+        endcase
+       }
+    default:                    // Anything else must be evaluable now.
+      Out2(ITEMN, EvalConst(H4+x))
+   }
+ }
+

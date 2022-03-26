@@ -1,0 +1,19 @@
+//Globals and externals for PSI.BCP AND BPSI.MAC
+
+global		//Rovner has reserved #120 thru #147
+{ PSISetCh:#120
+  PSIOn:#121
+  PSIOff:#122
+  IsPSIOn:#123
+  PSIChEnb:#124
+  PSIChDis:#125
+  LongDebrk:#126
+  PSIChInit:#127
+  FreeTICh:#130
+  ATI:#131
+  DTI:#132
+  PSIClear:#133
+  IsPSIChEnb:#134
+}
+
+external { psichn; psilev; psipc; psich0; fntbl}

@@ -1,0 +1,18 @@
+Main Differences between 10/50 BCPL and TENEX BCPL.
+--------------------------------------------------
+
+1] Structures: These are completely different.
+   A structure definition looks a bit like a PL/1 Structure
+   Definition. Structure References look like
+   <expr> << <selector>
+   <expr> >> <selector>
+  << implies that the <expr> is the thing to be selected from
+   >> implies that the <expr> points to the thing to be selected from
+
+2] Concrete Syntax:
+   \ means LOGOR
+   'reserved' words are in lower case
+   '<text>' is an ASCIZ string
+   "<text>" is a normal BCPL string. ( Characters packed four per word)
+   $<char> is the ascii code for <char>
+   {} [] are section brackets

@@ -1,0 +1,1141 @@
+
+// BCPL Code generators -- MACRO output routines.
+
+get "<xbcpl>headcg"
+manifest
+{ undeflab := 410
+  muldef :=   411
+ }
+
+//A GLOBAL STATIC:
+static
+{ MacroJFN:0
+}
+
+static
+{ pureblockx:   0
+  progstart:    false
+  purerel:      0
+  impureblockx: 0
+  impurerel:    -1
+ }
+structure
+{ P2
+  { bit 18
+    code bit 2
+    off bit 16
+   }
+ }
+manifest
+{ labtabmax :=  #1777
+  globtabmax := #77
+  littabmax :=  #1777
+ }
+static
+{ lhw:  0
+  rhw:  0
+  rhwr: 0
+  lhwr: 0
+ }
+manifest
+{ intabov := -1
+  extabov := 412
+  dupdef :=  413
+ }
+static
+{ purearea:    #400000
+  pureblock:   vec 380
+  purex:       0
+  purexx:      0
+  impurearea:  #440000
+  impureblock: vec 380
+  impurex:     0
+  impurexx:    0
+ }
+static
+{ impurebase: 0
+  globtab:    vec globtabmax
+  globx:      414
+ }
+static
+{ reljfn:     0
+  p2w:        0
+  p2wr:       0
+  relcounter: 0
+ }
+static
+{ relbits: 0
+  tmpx:    18
+ }
+static
+{ inttab:          vec #50
+  inttabv:         vec #50
+  inttabx:         -1
+  exttab:          vec #50
+  exttabv:         vec #50
+  exttabx:         -1
+  locationcounter: 0
+  impurecounter:   0
+  cglist:          false
+  cgpure:          true
+  cgimpure:        false
+  PURE:            0
+  IMPURE:          0
+
+// PURE and IMPURE hold the jfns for
+// the pure and impure temporary files respectively
+ }
+structure
+{ P
+  { bit 18
+    code bit 2
+    off bit 16
+   }
+ }
+static
+{ littab:  vec littabmax+1
+  littabv: vec littabmax+1
+  littabx: -1
+  labtab:  vec labtabmax+1
+  labtabv: vec labtabmax+1
+  labtabx: -1
+ }
+manifest
+{ tabov :=     415
+  littabmax := #1777
+  labtabmax := #1777
+ }
+static
+{ relx:        -1
+  purecount:   0
+  impurecount: 0
+  relxr:       0
+  relr:        0
+  relbuf:      vec 380
+  relc:        0
+  tmpcount:    0
+ }
+structure
+{ rbits
+  { r^0^littabmax+1 bit 2
+   }
+ }
+structure
+{ rword
+  { a^18 bit 2
+   }
+ }
+
+//Routines and functions in this package. * => local
+// *glr50
+// *bl2out
+// *bl2in
+// VMINIT
+// *radix50
+// WRLST
+// RLINIT
+// *outtmp
+// *ftmp
+// *readtmp
+// *litsearch
+// *labsearch
+// *emitw
+// *outrel
+// *frel
+// *cgp1i
+// CGPS2
+// WRINT
+// WREXT
+// *purein
+// *pureout
+// *impurein
+// *impureout
+// WRCH
+// WROCT
+// *WRN
+// WRIMP
+// WRPU
+// WRBLK
+// NoteGlobal
+// *bl1out
+// *bl1in
+// CompMAC
+// *w
+// WRMAC
+// WRLAB
+// WRDATA
+// *OPCODE
+//////////
+
+let glr50(l):=valof
+{ let k,w,r:=0,vec 4,vec 2
+  for i:=3 to 0 by -1 do
+  { w|i:=l rem 8
+    l:=l/8
+    if l eq 0 then
+    { k:=i
+      break
+     }
+   }
+  r>>String.c^1:=$g
+  r>>String.c^2:=$l
+  l:=3
+  for i:=k to 3 do
+  { r>>String.c^l:=(w|i)+#60
+    l:=l+1
+   }
+  r>>String.n:=6-k
+  resultis radix50(r)
+ }
+and bl2out(bs,ch) be
+{ IDPB(ch,lv bl2sptr)
+ }
+
+and bl2in(bs):=valof
+{ EofFlg:=false
+  test bl2pptr=bl2sptr
+  then
+  { EofFlg:=true
+    resultis $*e
+   }
+  or resultis ILDB(lv bl2pptr)
+ }
+
+and VMINIT() be
+{
+  { pureblockx:=0
+SSP_0
+    progstart:=false
+    MacroJFN:=0
+    purerel:=0
+    impureblockx:=0
+    impurerel:=-1
+   }
+  { lhw:=0
+    rhw:=0
+    rhwr:=0
+    lhwr:=0
+   }
+  { purearea:=#400000
+    purex:=0
+    purexx:=0
+    impurearea:=#440000
+    impurex:=0
+    impurexx:=0
+   }
+  { impurebase:=0
+    globx:=-1
+   }
+  { reljfn:=0
+    p2w:=0
+    p2wr:=0
+    relcounter:=0
+   }
+  { relbits:=0
+    tmpx:=18
+   }
+  { inttabx:=-1
+    exttabx:=-1
+    locationcounter:=0
+    impurecounter:=0
+    cglist:=false
+    cgpure:=true
+    cgimpure:=false
+    PURE:=0
+    IMPURE:=0
+
+// PURE and IMPURE hold the jfns for
+// the pure and impure temporary files respectively
+   }
+  { littabx:=-1
+    labtabx:=-1
+   }
+  { relx:=-1
+    purecount:=0
+    impurecount:=0
+    relxr:=0
+    relr:=0
+    tmpcount:=0
+   }
+
+ }
+and radix50(v):=valof
+{                               // radix50 input is a string
+
+// the output is the name converted to radix50
+// and packed into the lower 32 bits of the word
+
+  let a,w:=nil,0
+
+// w will have the value as built up
+
+  let i:=nil
+  i:=v>>String.n
+  i:=(i gt 6)=>6,i
+  for j:=1 to i do
+  { a:=v>>String.c^j
+    test a gt #100
+    ifso
+    { a:=a-#66
+      if a gt #44 then
+      { a:=a-#40
+        if a gt #44 then a:=0
+       }
+     }
+    ifnot
+    { a:=a-#57
+      if a le 0 gt #12 then a:=0
+     }
+    w:=w*#50+a
+   }
+  resultis w
+ }
+and WRLST(s) be
+{ if cglist then
+  {                             // write on the proper file
+    WriteS(OUTPUT,s)
+   }
+  return
+ }
+and RLINIT(ll) be
+{ cglist:=ll
+
+// indicate whether there is a listing or not
+
+  OUTPUT:=MacroJFN
+  PURE:=CreateOutput(-pureout)
+  for i:=0 to GlobNMax do { globinfo|i:=-1}
+  return
+ }
+
+and outtmp(w,r) be
+{ test cgpure
+  ifso
+  { locationcounter:=locationcounter+1
+    test purecount eq 18
+    ifso
+    { pureblock|(pureblockx-18):=purerel
+      pureblockx:=pureblockx+1
+      purerel:=0
+      purecount:=1
+     }
+    ifnot purecount:=purecount+1
+    test pureblockx eq 380
+    ifso
+    { BOUT(PURE,380)
+      for i:=0 to 379 do BOUT(PURE,pureblock|i)
+      pureblockx:=1
+     }
+    ifnot pureblockx:=pureblockx+1
+    pureblock|pureblockx:=w
+    purerel<<rword.a^purecount:=r
+    return
+   }
+  ifnot
+  { impurecounter:=impurecounter+1
+    test impurecount eq 18
+    ifso
+    { impureblock|(impureblockx-18):=impurerel
+      impurecount:=1
+      impureblockx:=impureblockx+1
+      impurerel:=0
+     }
+    ifnot impurecount:=impurecount+1
+    test pureblockx eq 380
+    ifso
+    { BOUT(IMPURE,380)
+      for i:=0 to 379 do BOUT(IMPURE,impureblock|i)
+      impureblockx:=1
+     }
+    ifnot impureblockx:=impureblockx+1
+    impurerel<<rword.a^impurecount:=r
+    impureblock|impureblockx:=w
+    return
+   }
+ }
+and ftmp() be
+{ test cgpure
+  ifso
+  { unless pureblockx eq 0 do
+    { pureblock|(pureblockx-purecount):=purerel
+      BOUT(PURE,pureblockx+1)
+      for i:=0 to pureblockx do BOUT(PURE,pureblock|i)
+      pureblockx:=0
+      purerel:=0
+      purecount:=0
+     }
+   }
+  ifnot
+  { unless impureblockx eq 0 do
+    { impureblock|(impureblockx-impurecount):=impurerel
+      BOUT(IMPURE,impureblockx+1)
+      for i:=0 to impureblockx do BOUT(IMPURE,impureblock|i)
+      impureblockx:=0
+      impurerel:=0
+      impurecount:=0
+     }
+   }
+  return
+ }
+and readtmp() be
+{ if tmpcount eq 0 then
+  {                             // read in a new block
+  back:
+    tmpcount:=BIN((cgpure=>PURE,IMPURE))
+    if EofFlg then return
+    if tmpcount le 0 then
+    { frel()
+      relcounter:=relcounter-tmpcount
+      goto back
+     }
+    tmpx:=18
+   }
+  test tmpx eq 18
+  ifso
+  { relbits:=BIN((cgpure=>PURE,IMPURE))
+    tmpcount:=tmpcount-1
+    tmpx:=1
+   }
+  ifnot tmpx:=tmpx+1
+  p2wr:=relbits<<rword.a^tmpx
+  p2w:=BIN(cgpure=>PURE,IMPURE)
+  tmpcount:=tmpcount-1
+  return
+ }
+and litsearch(x,r):=valof
+{ for i:=0 to littabx do
+  { if littab|i eq x then
+    { if littabv>>rbits.r^i eq r then resultis i
+     }
+   }
+  if littabx eq littabmax then
+  { Report(tabov)
+    resultis 0
+   }
+  littabx:=littabx+1
+  littab|littabx:=x
+  littabv>>rbits.r^littabx:=r
+  resultis littabx
+ }
+and labsearch(l):=valof
+{ for i:=0 to labtabx do
+  { if labtab|i eq l then resultis i
+   }
+  if labtabx eq labtabmax then
+  { Report(tabov)
+    resultis 0
+   }
+  labtabx:=labtabx+1
+  labtab|labtabx:=l
+  labtabv|labtabx:=0
+  resultis labtabx
+ }
+and emitw() be
+{                               // when entered (p2w,p2wr) contains
+                                //-- word
+
+// it is translated and output to REL file
+
+  let x,y:=nil,nil
+  x:=lhz p2w
+  y:=rhz p2w
+  if p2wr ge 2 then x:=cgp1i(x,true)
+  if p2wr & 1 eq 1 then y:=cgp1i(y,false)
+  outrel((rhz x,,rhz y),(lhz x)*2+(lhz y))
+  return
+ }
+and outrel(w,r) be
+{ if relx eq 379 then
+  { BOUT(reljfn,(1,,360))
+    relbuf|361:=relr
+    for i:=0 to 379 do BOUT(reljfn,relbuf|i)
+    relx:=-1
+   }
+  test relx eq -1
+  ifso
+  { relbuf|1:=relcounter
+    relr:=#200000000000
+    relxr:=2
+    relc:=1
+    relx:=2
+   }
+  ifnot
+  { test relxr eq 18
+    ifso
+    { relbuf|(relx-18):=relr
+      relr:=0
+      relxr:=1
+      relx:=relx+2
+     }
+    ifnot
+    { relxr:=relxr+1
+      relx:=relx+1
+     }
+   }
+  relc:=relc+1
+  relr<<rword.a^relxr:=r
+  relbuf|relx:=w
+  relcounter:=relcounter+1
+  return
+ }
+and frel() be
+{ unless relx eq -1 do
+  { relbuf|(relx-relxr):=relr
+    BOUT(reljfn,(1,,relc))
+    for i:=0 to relx do BOUT(reljfn,relbuf|i)
+    relx:=-1
+    return
+   }
+ }
+
+and cgp1i(a,lr):=valof
+{                               // lr:true if left half, false if right
+                                //-- half
+
+// a is half word to be translated (pass 1 address)
+
+  let x,y,z:=nil,nil,nil
+  x:=a<<P.code
+  y:=a<<P.off
+  switchon x into
+  { case 1:                     // label (internal: Ln)
+            y:=labtabv|y        // get label table entry
+            x:=lhz y
+            y:=rhz y
+            switchon x into
+            { case 0: Report(undeflab)
+                      resultis 0
+
+              case 1: resultis (1,,y)
+
+              case 2: resultis (1,,y+impurebase)
+             }
+    case 0:
+    exter:                      // external name reference
+            z:=exttabv|y
+            z:=lr=>lh z,rh z
+            test z lt 0
+
+// is there a chain for this half word?
+
+            ifso z:=0           // no emit a zero
+            ifnot z:=(1,,z)
+            test lr
+            ifso lh exttabv|y:=relcounter
+            ifnot rh exttabv|y:=relcounter
+            resultis z
+
+    case 2:                     // global
+            z:=lr=>lh globinfo|y,rh globinfo|y
+            test z lt 0         // is there a chain?
+            ifso z:=0
+            ifnot z:=(1,,z)
+            test lr
+            ifso lh globinfo|y:=relcounter
+            ifnot rh globinfo|y:=relcounter
+            resultis z
+
+    case 3: resultis (1,,y+locationcounter)
+   }
+ }
+and CGPS2(tnm,rnm) be
+{ let counter,entlength:=nil,nil
+                                // pass 2
+  impurebase:=locationcounter+littabx+1
+
+// now force out the remainder(if any) of the
+// pass 1 pure and impure files
+
+  cgpure:=true
+  ftmp()
+  cgpure:=false
+  ftmp()
+  EndWrite(PURE)
+  EndWrite(IMPURE)
+  PURE:=FindInput(-purein)
+  if cglist                     // is there a listing?
+  then
+  { if cgimpure then
+    { EndWrite(Block1JFN)
+      OUTPUT:=MacroJFN
+      Block1JFN:=FindInput(-bl1in)
+      WriteS("*n;Impures*n")
+      { let c:=BIN(Block1JFN)
+        if EofFlg break
+        Writech(OUTPUT,c)
+       }
+      repeat
+      WriteS("*n;End of impures*n")
+      EndRead(Block1JFN)
+      if Block2JFN ne 0 do
+      { EndWrite(Block2JFN)
+        Block2JFN:=FindInput(-bl2in)
+        { let c:= BIN(Block2JFN)
+          if EofFlg break
+          Writech(OUTPUT,c)
+         }
+        repeat
+        EndRead(Block2JFN)
+       }
+     }
+
+// now begin to write REL file
+   }
+  reljfn:=CreateOutput(rnm,36)
+
+// create REL file
+
+  counter:=17
+  entlength:=inttabx+globx+2
+  if entlength ne 0 then { BOUT(reljfn,(4,,entlength)) }
+  for i:=0 to inttabx do
+  { test counter eq 17
+    ifso
+    { BOUT(reljfn,0)
+      counter:=0
+     }
+    ifnot counter:=counter+1
+    BOUT(reljfn,inttab|i)
+   }
+  for i:=0 to globx do
+  { test counter eq 17
+    ifso
+    { BOUT(reljfn,0)
+      counter:=0
+     }
+    ifnot counter:=counter+1
+    BOUT(reljfn,glr50(lhz (globtab|i)))
+   }
+  BOUT(reljfn,(6,,1))
+  BOUT(reljfn,0)
+  BOUT(reljfn,radix50(tnm))
+  relcounter:=0
+  cgpure:=true
+  relx:=-1
+  tmpcount:=0
+  { readtmp()
+    if EofFlg break
+    emitw()
+   }
+  repeat
+  for i:=0 to littabx do
+  { p2w:=littab|i
+    p2wr:=littabv>>rbits.r^i
+    emitw()
+   }
+  frel()
+  IMPURE:=FindInput(-impurein)
+  cgpure:=false
+  relx:=-1
+  tmpcount:=0
+  { readtmp()
+    if EofFlg break
+    emitw()
+   }
+  repeat
+  frel()
+
+// now all done with the code
+// now output the symbol table
+// first output the internals (i.e. entries)
+
+  unless inttabx eq -1 do
+  { BOUT(reljfn,(2,,inttabx*2+2))
+    counter:=16
+    for i :=0 to inttabx do
+    { test counter eq 16
+      ifso
+      { BOUT(reljfn,#042104210421)
+
+// rel word for all symtab entries
+
+        counter:=0
+       }
+      ifnot counter:=counter+2
+      BOUT(reljfn,(inttab|i) logor #040000000000)
+      { let jj:=nil
+        jj:=labtabv|(inttabv|i)
+        BOUT(reljfn,((lhz jj) eq 1)=>(rhz jj),(rhz jj)+impurebase)
+       }
+     }
+   }
+  unless globx eq -1 do
+  { BOUT(reljfn,(2,,globx*2+2))
+    counter:=16
+    for i:=0 to globx do
+    { let jj,kk:=nil,nil
+      test counter eq 16
+      ifso
+      { BOUT(reljfn,#042104210421)
+        counter:=0
+       }
+
+      ifnot counter:=counter+2
+      BOUT(reljfn,glr50(lhz (globtab|i)) logor #040000000000)
+      jj:=labtabv|(rhz(globtab|i))
+      BOUT(reljfn,((lhz jj) eq 1)=>(rhz jj),(rhz jj)+impurebase)
+     }
+   }
+
+// now output the global requests
+
+  if cglist then
+  { for i:= 0 to GlobNMax do
+    { if globinfo|i ne -1 do
+      { WriteS("EXTERN*sGL")
+        WriteOct(i)
+        Writech($*n)
+       }
+     }
+    if progstart then WriteS("*tEXTERN*tBCFRST*n")
+    WriteS("*n*tLIT*n")
+    WriteS(".REQUEST SYS:BCPLIB*n")
+    WriteS("*n*tEND*n*n")
+    EndWrite(MacroJFN)
+   }
+  { let jj,kk:=0,0
+    for i:=0 to GlobNMax do
+    { if globinfo|i ne -1 then jj:=jj+2
+     }
+    if jj ne 0 then BOUT(reljfn,(2,,jj))
+    counter:=16
+    for i:=0 to GlobNMax do
+    { if globinfo|i ne -1 then
+      { test counter eq 16
+        ifso
+        { BOUT(reljfn,#042104210421)
+          counter:=0
+         }
+        ifnot counter:=counter+2
+        BOUT(reljfn,glr50(i) logor #600000000000)
+        BOUT(reljfn,rhz (globinfo|i))
+       }
+     }
+
+   }
+
+// now output the external name requests
+
+  if exttabx ge 0 then
+  { BOUT(reljfn,(2,,exttabx*2+2))
+   }
+  counter:=16
+  for i:=0 to exttabx do
+  { let jj:= nil
+    test counter eq 16
+    ifso
+    { BOUT(reljfn,#042104210421)
+      counter:=0
+     }
+    ifnot counter:=counter+2
+    BOUT(reljfn,#600000000000 logor exttab|i)
+    BOUT(reljfn,(rhz exttabv|i))
+   }
+
+// now output "IMPURE"
+
+  BOUT(reljfn,(2,,2))
+  BOUT(reljfn,#40000000000)
+  BOUT(reljfn,#100000000000 logor radix50("IMPURE"))
+  BOUT(reljfn,impurebase)
+
+// now output the "EXTERN BCFRST" if GL1 is present
+
+  if progstart then
+  { BOUT(reljfn,(2,,2))
+    BOUT(reljfn,0)
+    BOUT(reljfn,#600000000000 logor radix50("BCFRST"))
+    BOUT(reljfn,0)
+   }
+
+// ////
+
+  for i:=1 to RequireTable|0 do
+  { BOUT(reljfn,(#16,,3))
+    BOUT(reljfn,0)
+    BOUT(reljfn,RequireTable|(i*2-1))
+    BOUT(reljfn,RequireTable|(i*2))
+    BOUT(reljfn,0)
+   }
+  for i:=1 to RequestTable|0 do
+  { BOUT(reljfn,(#17,,3))
+    BOUT(reljfn,0)
+    BOUT(reljfn,RequestTable|(i*2-1))
+    BOUT(reljfn,RequestTable|(i*2))
+    BOUT(reljfn,0)
+   }
+
+// ////////
+// now output the library request
+
+  BOUT(reljfn,(#17,,3))
+  BOUT(reljfn,0)
+  BOUT(reljfn,#424360545142)
+
+// the octal number is sixbit 'bcplib'
+
+  BOUT(reljfn,0)
+  BOUT(reljfn,#637163000000)
+
+// the octal number is sixbit 'SYS'
+// now output the END block
+
+  BOUT(reljfn,(5,,1))
+  BOUT(reljfn,#200000000000)
+  BOUT(reljfn,relcounter)
+  EndWrite(reljfn)
+  return
+ }
+and WRINT(v,l) be
+{                               // v is a packed string representing
+
+// a local name which will be an entry
+// l is the label number
+
+  let x:=radix50(v)
+  if inttabx=#50                // have we hit the max number?
+  then
+  { Report(intabov)
+    return
+   }
+  inttabx:=inttabx+1
+  inttab|inttabx:=x
+  inttabv|inttabx:=labsearch(l)
+  if Block2JFN eq 0 then Block2JFN:=CreateOutput(-bl2out)
+  WriteS(Block2JFN,v)
+  WriteS(Block2JFN,"=L")
+  WriteN(Block2JFN,l)
+  WriteS(Block2JFN,"*nENTRY*t")
+  WriteS(Block2JFN,v)
+  Writech(Block2JFN,$*n)
+  return
+ }
+and WREXT(v,l) be
+{ let x,i:=radix50(v),nil
+  if exttabx eq #50 then
+  { Report(extabov)
+    return
+   }
+  exttabx:=exttabx+1
+  exttab|exttabx:=x
+  exttabv|exttabx:=-1
+  i:=labsearch(l)
+  if labtabv|i ne 0 then
+  { Report(dupdef)
+    return
+   }
+  labtabv|i:=(3,,exttabx)
+  if Block2JFN eq 0 then Block2JFN:=CreateOutput(-bl2out)
+  WriteS(Block2JFN,"*nEXTERN*t")
+  WriteS(Block2JFN,v)
+  WriteS(Block2JFN,"*nL")
+  WriteN(Block2JFN,l)
+  Writech(Block2JFN,$=)
+  WriteS(Block2JFN,v)
+  Writech(Block2JFN,$*n)
+  return
+ }
+and purein(b):=valof
+{ test purexx eq purex
+  ifso
+  { EofFlg:=true
+    resultis 0
+   }
+  ifnot
+  { let x:=purearea|purexx
+    purexx:=purexx+1
+    EofFlg:=false
+    resultis x
+   }
+ }
+and pureout(b,c) be
+{ if purex ge #40000 then
+  { Report(416)
+    return
+   }
+  purearea|purex:=c
+  purex:=purex+1
+  return
+ }
+and impurein(b):=valof
+{ test impurexx eq impurex
+  ifso
+  { EofFlg:=true
+    resultis 0
+   }
+  ifnot
+  { let x:=impurearea|impurexx
+    impurexx:=impurexx+1
+    EofFlg:=false
+    resultis x
+   }
+ }
+and impureout(b,c) be
+{ if impurex ge #40000 then
+  { Report(417)
+    return
+   }
+  impurearea|impurex:=c
+  impurex:=impurex+1
+  return
+ }
+
+and WRCH(c) be
+
+{ if cglist then Writech(OUTPUT,c)
+ }
+
+and WROCT(e) be
+{ if cglist then WriteOct(OUTPUT,e)
+ }
+and WRN(e) be
+{ if cglist then WriteN(OUTPUT,e)
+ }
+and WRIMP() be
+{ if not cgimpure then
+  { if cglist then Block1JFN:=CreateOutput(-bl1out)
+    cgimpure:=true
+    IMPURE:=CreateOutput(-impureout)
+   }
+  cgpure:=false
+  OUTPUT:=Block1JFN
+  return
+ }
+and WRPU() be
+{ cgpure:=true
+  OUTPUT:=MacroJFN
+  return
+ }
+and WRBLK(n) be
+{ if cglist then
+  { WRLST("*tBLOCK*t")
+    WROCT(n)
+    WRCH($*n)
+   }
+  test cgpure
+  ifso { locationcounter:=locationcounter+n }
+
+  ifnot { impurecounter:=impurecounter+n }
+  ftmp()
+  BOUT((cgpure=>PURE,IMPURE),-n)
+ }
+and NoteGlobal(G,L) be
+{ let so:=OUTPUT
+  if cglist then
+  { if Block2JFN eq 0 then Block2JFN:=CreateOutput(-bl2out)
+    OUTPUT:=Block2JFN
+    WriteS("GL")
+    WriteOct(G)
+    WriteS("=L")
+    WriteN(L)
+    Writech($*n)
+    WriteS("ENTRY*sGL")
+    WriteOct(G)
+    Writech($*n)
+   }
+  for i:=0 to globx do
+  { if G eq lhz (globtab|i) then
+    { Report(402,G)
+      OUTPUT:=so
+      return
+     }
+   }
+  if globx eq globtabmax then
+  { Report(intabov)
+    OUTPUT:=so
+    return
+   }
+  globx:=globx+1
+  lh (globtab|globx):=G
+  rh (globtab|globx):=labsearch(L)
+  if G eq 1 then progstart:=true
+  OUTPUT:=so
+  return
+ }
+and bl1out(b,c) be
+{ IDPB(c,lv bl1sptr)
+ }
+and bl1in(b):=valof
+{ EofFlg:=false
+  test bl1pptr eq bl1sptr
+  ifso
+  { EofFlg:=true
+    resultis $*e
+   }
+  ifnot resultis ILDB(lv bl1pptr)
+ }
+and CompMAC(o,a,v) be
+{ WRMAC(o,a, v|0,v|1, v|2,v|3,v|4, v|5,v|6)
+ }
+and w(C) be
+{ WRCH(C)
+ }
+and WRMAC(o,a, t,e, i,x,l, s,b) be
+{wrmac                          // o:OPCODE; a:AC; t:Type; e:Eff.addr
+                                //-- (# going with  t)
+
+// i:Indirect bit; x:XR; l: Literal
+// l_0:: no literal
+// l_1:: straight literal
+// l_-1: [POINT s,  e, b]
+// s:Byte size; b:Right-most bit number of byte
+
+  structure
+  { P
+    { opcode bit 9
+      AC bit 4
+      indir bit 1
+      index bit 4
+     }
+    Q
+    { bytes bit 6
+      point bit 6
+     }
+   }
+  flgstk|(flgstk|0):=true       // yes, code was output
+
+// maybe error for resproc if macro statement
+
+  w($*t)
+  if cglist then WRLST(OPCODE(o))
+  w($*t)
+
+  lhw<<P.opcode:=o
+  lhw<<P.AC:=a
+  lhw<<P.indir:=i
+  if a>0 do
+  { WROCT(a)
+    w($,)
+    if a>MAXXRNUMBER & a<#16 do MAXXRNUMBER:=a
+   }
+
+  if i ne 0 do w($*a)
+
+  if l ne 0 do test l>0
+               ifso w($[)
+               ifnot
+               { WRLST("[POINT*s")
+                 WRN(s)
+                 w($,)
+                }
+
+  switchon t into
+  { case LOCAL:  if x ne 0 do Report(919)
+                                // Mpl indexing no good
+                 x:=StackAC
+    case 0:
+    case NUMBER:
+    case P10reg: rhwr:=0
+                 rhw:=e
+                 if e<0 do
+                 { w($-)
+                   e:= -e
+                  }
+                 WROCT(e)
+                 endcase
+
+    case LABEL:  rhwr:=1
+                 rhw:=labsearch(e)
+                 rhw<<P2.code:=1
+                 w($L)
+                 WRN(e)
+                 endcase
+
+    case GLOBAL: WRLST("GL")
+                 WROCT(e)
+                 rhwr:=1
+                 rhw:=e
+                 rhw<<P2.code:=2
+                 endcase
+
+    default:     Report(918)
+                 WRLST("ErrorAddress")
+                 rhwr:=0
+                 rhw:=0
+   }
+
+  if x ne 0 do
+  { w($()
+    WROCT(x)
+    w($))
+   }
+
+  test l eq 0
+  ifso
+  { lhw<<P.index:=x
+   }
+  ifnot
+  { test l>0
+    ifso w($])
+    ifnot
+    { if b ge 0 do
+      { w($,)
+        WRN(b)
+       }
+      rhw<<Q.bytes:=35-b
+      rhw<<Q.point:=s
+      rhw<<P.index:=x
+      w($])
+     }
+
+    rhw:=litsearch(rhw,rhwr)
+    rhwr:=1
+    rhw<<P2.code:=3
+    lhw<<P.index:=0
+   }
+  rh lhw:=rhw
+  outtmp(lhw,rhwr)              // do the output to the proper file
+  w($*n)
+  test cgpure then OutA|Off:=OutA|Off+1
+  or OutB|Off:=OutB|Off+1
+ }wrmac
+
+and WRLAB(n) be
+{ let j:=nil
+  w($L)
+  WRN(n)
+  WRLST(":*n")
+  j:=labsearch(n)
+  test labtabv|j eq 0
+  ifso { labtabv|j:=cgpure=>(1,,locationcounter),(2,,impurecounter) }
+  ifnot { Report(muldef) }
+ }
+
+and WRDATA(a,l,g) be
+{ let f:=0
+  if l ne 0 do f:=1
+  if g ne 0 do f:=f+2
+  switchon f into
+  { case 3: Report(989)
+            finish
+            endcase
+
+    case 0: WRLST("*tXWD*t")
+            WROCT(lhz a)
+            w($,)
+            WROCT(rhz a)
+            outtmp(a,0)
+            endcase
+
+    case 1: WRLST("*tZ*tL")
+            WRN(l)
+            a:=labsearch(l)
+            a<<P2.code:=1
+            outtmp(a,1)
+            endcase
+
+    case 2: WRLST("*tZ*tGL")
+            WROCT(g)
+            g<<P2.code:=2
+            outtmp(g,1)
+   }
+  w($*n)
+  test cgpure then OutA|Off:=OutA|Off+1
+  or OutB|Off:=OutB|Off+1
+ }
+
+and OPCODE(o) := selecton o into
+{ default: "**ERROR"
+           get "<XBCPL>opcsplngs"
+ }
+

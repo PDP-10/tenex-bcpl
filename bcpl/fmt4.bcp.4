@@ -1,0 +1,302 @@
+
+get "headfmt.bcp"
+
+let Operator(Precedence, MaxPrecedence, LastFold, FoldMargin,
+             FoldLevel, Char) be
+{ if NumbArgs() > 5 then Addch(Char)
+  AllowSpace()
+  if Precedence > MaxPrecedence|0 > -1 then MaxPrecedence|0 _ Precedence
+  SkipEOL()
+  let NewIndent _ FoldMargin
+  test MaxPrecedence|0 > -1
+  ifso MaxPrecedence|Precedence _ -1   // Mark existance of operator
+  ifnot NewIndent _ NewIndent + MaxPrecedence|Precedence
+  if Precedence < FoldLevel then return
+  if rv LastFold ne 0 & Line|0 + Indent > MaxColumn
+                                // If line is too long
+  then FoldLine(LastFold)       // Fold at last fold point
+  test Precedence = FoldLevel   // Is the most binding operator we want
+                                //-- to fold?
+  ifso rv LastFold _ Line|0,,NewIndent
+                                // Yes, just remember where
+  ifnot
+  { FinishLine(LastFold)        // Always fold less binding operators
+    Indent _ NewIndent
+    LastLabel _ -1
+  }
+}
+
+and DoBrace(NewLineF, NOneLine) be
+{ switchon NumbArgs() into
+  { case 0:  NewLineF _ false
+    case 1:  NOneLine _ false
+    default:
+  }
+  let BlockType _ NeededBlock
+  NeededBlock _ 0
+  unless NewLinePerBrace \ BlockType ne 0 \ NewLineF \
+         Line|0 + Indent = LeftMargin
+  do
+  { if ErrorSet(1000, DoBrace1, MAXPRE, Line|0, BlockType, NOneLine)
+    do return
+  }
+  if Line|0 ne 0 then FinishLine()
+  DoBrace1(0, 0, BlockType, false)
+}
+
+and DoBrace1(NFold, ExcessIndent, BlockType, NOneLine) be
+{ let SaveDF, SaveLM _ MinFold, LeftMargin
+  and SaveOLF _ OneLineFlag
+  and SaveIC, SaveID _ InCase, InDecl
+  and SaveNeeds _ Needs
+  MinFold, LeftMargin _ NFold, ExcessIndent + IndentStep + Indent
+  OneLineFlag _ NOneLine
+  LastLabel _ -1                // Prevent undenting for first label
+  Needs _ 0
+  InCase, InDecl _ false, false
+  Space(IndentStep-2)
+  Addch(${)
+  ReadBraceName(true)
+  switchon BlockType into
+  { case CASE: InCase _ true
+               DoCaseDecl(true)
+               endcase
+
+    case DECL: InDecl _ true
+               DoCaseDecl(false)
+               endcase
+
+    default:   ReadLines($})
+  }
+  unless OneLineFlag do Indent _ LeftMargin - 2 + EndBlockIndent
+  Addch($})
+  OneLineFlag _ SaveOLF
+  MinFold, LeftMargin _ SaveDF, SaveLM
+  InCase, InDecl _ SaveIC, SaveID
+  Needs _ SaveNeeds
+  ReadBraceName(false)
+}
+
+and DoCaseDecl(CaseF) be
+{ let Savec _ vec SAVECSIZE
+  and SaveOL _ OutputLines
+  and SaveCFF, SaveLFF _ CommentFitFailures, LabelFitFailures
+  and v _ vec MAXLFF
+  SaveState(Savec)
+  LabelFitFailures _ v
+  for i _ 0 to MAXLFF do LabelFitFailures|i _ 0
+
+// First, try to figure out if a good indentation already exists by
+  //-- scanning the first part of the switchon block
+
+  let SIP _ ReadInputPointer()  // Save input file location
+  and NCh _ Indent + Line|0
+  and XCh _ 0
+  {                             // loop to here for each character
+    switchon Getch() into
+    { case $::   if Getch() = $= then	// :=?
+                      { NCh := NCh + 1
+                        endcase
+                      }
+                      ReturnCh(1)
+                      XCh _ 0        // Cancel presumed margin
+                 endcase
+
+      case $$:   NCh _ NCh + 1  // Don't confuse charconsts
+                 Getch()
+                 if Ch = $** \ Ch = $*^ then { NCh _ NCh + 1; Getch()}
+                 endcase
+
+      case $/:   unless Getch() = $/ do { ReturnCh(1); endcase }
+    case $":                 Getch()        // Comment.  Skip to end of line
+                 repeatuntil Ch = $*n
+      case $*n:  if XCh > 0 then break
+
+                                 // Got it
+                 XCh _ 0
+                 NCh _ 0
+                 loop
+
+      case $*s:  endcase
+
+      default:   if XCh le 0 then XCh _ NCh
+                 endcase
+    }
+    NCh _ NCh + 1
+  }
+  repeat
+  ResetInputFile(SIP)
+  unless XCh > LeftMargin + 2 & valof
+  { if TryCaseDecl(XCh - LeftMargin) &
+       LabelFitFailures|0 * LFFactor < OutputLines - SaveOL
+    then resultis true
+    RestoreState(Savec)
+    resultis false
+  }
+  do
+  { test TryCaseDecl(2)
+    ifnot Backup(ThisShortening)
+    ifso if LeftMargin < MaxCaseLM then
+         { let BestIndent _ 2
+           and BestError _ LabelFitFailures|0
+           and LineCount _ OutputLines - SaveOL
+           and OKIndent _ -1
+           for i _ 1 to MAXLFF do
+           { if BestError = 0 then break
+             BestError _ BestError - LabelFitFailures|i
+             BestIndent _ i + 2
+             if BestError * LFFactor < LineCount & OKIndent < 0
+             then OKIndent _ BestIndent
+           }
+           unless OKIndent < 0 then
+           {                    // There is a good indentation, try for
+                                //-- no label fit failures
+             RestoreState(Savec)    // Restore state
+             unless TryCaseDecl(BestIndent) then
+             {                  // That didn't work, try a little less
+               if OKIndent = BestIndent \ valof
+               { RestoreState(Savec)
+                 resultis ~(TryCaseDecl(OKIndent))
+               }
+               then
+               { RestoreState(Savec)
+                 TryCaseDecl(2)
+               }
+             }
+           }
+         }
+  }
+  CommentFitFailures _ SaveCFF
+  LabelFitFailures _ SaveLFF
+  LastLabel _ 0
+}
+
+and TryCaseDecl(Undent) _ valof
+{ let SaveOL _ OutputLines
+  and SaveCDU _ CaseDeclUndent
+  LeftMargin _ LeftMargin + Undent
+  CommentFitFailures _ 0
+  CaseDeclUndent _ Undent
+  ReadLines($})
+  unless OneLineFlag do Indent _ Indent - Undent
+  LeftMargin _ LeftMargin - Undent
+  CaseDeclUndent _ SaveCDU
+  resultis (OutputLines - SaveOL) > (CommentFitFailures * CFFactor)
+}
+
+and DoComment() be
+{ let Column _ nil
+  and NextBL _ 0
+  and EndLine _ Line|0 + Indent + MinCommentSep
+  test Line|0 = 0
+  ifso { Column _ 0; FinishLine(); Indent _ 0; LastLabel _ -1}
+  ifnot
+  { Column _ CommentColumn
+    if EndLine > Column + MinCommentSep then
+    { CommentFitFailures _ CommentFitFailures + 1
+      test EndLine < Column + MaxCommentSlip
+      ifso Column _ EndLine
+      ifnot { BlankLine _ BlankLine & ~BLANKBEFORE; FinishLine()}
+    }
+  }
+  let LastSpace _ 0
+  FlushBlanks()
+  let CommentString _ "// "
+  MaxColumn _ 100000            // Don't backup due to comment overflow
+Continue:
+  Space(Column - Line|0 - Indent)
+  Append(CommentString)
+  Getch()
+MoreComment:
+  until Ch = $*n do
+  { Addch(Ch)
+    if Line|0 + Indent > PageWidth & LastSpace ne 0 then
+    { ResetInputFile(rhz LastSpace)
+      Line|0 _ lhz LastSpace
+      FinishLine()
+      LastSpace _ 0
+      CommentString _ "//-- "
+      goto Continue
+    }
+    if Ch = $*s then LastSpace _ Line|0,,ReadInputPointer()
+    Getch()
+  }
+  let SPtr _ ReadInputPointer()
+  FlushBlanks()
+  test Getch() = $/ & Getch() = $/
+  ifso test valof
+       { test Getch() = $.
+         ifso resultis Getch() = $. & Getch() = $.
+         ifnot resultis Ch = $- & Getch() = $- & Getch() = $*s
+       }
+       ifso
+       { FlushTrailingBlanks(); FlushBlanks(); Ch _ $*s
+         goto MoreComment
+       }
+       ifnot if Column = 0 then NextBL _ HADBLANK
+  ifnot if Column = 0 then BlankLine _ BlankLine\BLANKAFTER
+  ResetInputFile(SPtr)
+  MaxColumn _ PageWidth
+  FinishLine()
+  BlankLine _ BlankLine\NextBL
+}
+
+and AllowComment() be
+{ FlushBlanks()
+  test IfComment()
+  ifso DoComment()
+  ifnot { FinishLine(); SkipEOL()}
+}
+
+and AllowSpace() be
+{ if Getch() ne $*s then { ReturnCh(1); return }
+  if Line|(Line|0) ne $*s then Addch(Ch)
+  FlushBlanks()
+}
+
+and ReadBraceName(OpenBrace) be
+{ Getch()
+  if Ch = $*s then
+  { FlushBlanks()
+    if IfComment() do { DoComment(); return }
+    unless OpenBrace do { AllowComment(); return }
+    Addch($*s)
+    SkipEOL()
+    return
+  }
+  while SymbolConstituent(Ch) do { Addch(Ch); Getch()}
+  ReturnCh(1)
+  AllowComment()
+}
+
+and SymbolConstituent(Ch) _ selecton Ch into
+{ case $A to $Z:
+  case $a to $z:
+  case $0 to $9: true
+  default:       false
+}
+
+and DoParen(FoldLevel, LastFold) be
+{ let SCFC _ CommentFitFailures
+  and SF _ MinFold
+  and L _ LeftMargin
+  CommentFitFailures _ 0
+  Addch($()
+  { LeftMargin _ Line|0 + Indent
+    if rv LastFold ne 0 then
+    { MinFold _ MAXPRE
+      if ErrorSet(1000, ReadLines, $)) then break
+      FoldLine(LastFold)
+      loop
+    }
+    MinFold _ FoldLevel le LOGAND => FoldLevel, MAXPRE
+    ReadLines($))
+    break
+  }
+  repeat
+  LeftMargin _ L
+  MinFold _ SF
+  CommentFitFailures _ SCFC
+  Addch($))
+}
+

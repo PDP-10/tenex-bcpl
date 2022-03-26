@@ -1,0 +1,212 @@
+        //nstring.b
+        //last modified on Wed 15 Mar 72 0154.55 by PAUL.
+
+        //string manipulation utility routines
+
+        //assumptions...characters within a string are numbered starting at 1. 
+	//the routines assume adequate storage for strings...e.g. in append, the output string
+	//is assumed large enough to hold the result. bcpl strings can be no bigger than 376 characters.
+
+        //internals
+get "<bcpl>head"
+get "<bcpl>stringhead"
+
+
+
+manifest 
+ { UNDEF_0}
+
+        //find the indicated substring (substr) in the indicated string (str)- 
+	//start searching at char # scn. if the substring is found, return a ptr to 
+	//its first char. in rv slv, and a ptr to its last char in rv elv (i.e. the number of the 
+	//character within the string...characters are numbered from 1) , and resultis true, else resultis false.
+let findsubstr(str,substr,slv,elv,scn)_valof
+ { let k,j_0,1
+   
+   if scn gr q4(str|0) do resultis false
+ l:
+   for i_scn to q4(str|0) do
+   test pullch(str,i) eq pullch(substr,j) then
+    { if j eq 1 do k_i
+      if j eq q4(substr|0) do 
+       { rv elv_i
+         rv slv_k
+         resultis true
+       }
+      j_j+1
+    }
+   or
+   unless j eq 1 do 
+    { j_1
+      scn_k+1
+      goto l
+    }
+   resultis false
+ }
+
+        //search for one of 3 chars in a string starting at the indicated char 
+	//position (rv chnlv). if a buffer is specified, fill the buffer with the scanned characters. 
+	//resultis true if one of the indicated chars is found., false otherwise. rv chnlv points to the 
+	//located termination char. if none is found, rv chnlv is unchanged.
+and scanuntil(line,buffer,chnlv,d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18)_valof
+ { let ch_0
+   let cp_rv chnlv
+   let v_lv chnlv
+   let numterms_numbargs()-3
+   let isterminator(ch,v,nt)_valof
+    { for i_1 to nt do if v|i eq ch do resultis true
+      resultis false
+    }
+   
+   if cp gr q4(line|0) do resultis false
+   ch_pullch(line,cp)
+   unless buffer eq UNDEF do buffer|0_0
+   until isterminator(ch,v,numterms) do
+    { unless buffer eq UNDEF do addch(ch,buffer)
+      cp_cp+1
+      if cp gr q4(line|0) do resultis false
+      ch_pullch(line,cp)
+    }
+   rv chnlv_cp
+   resultis true
+ }
+
+        //change all instances of the indicated substring in the indicated string to the indicated new substring. resultis a ptr to the changed string.
+and changesubstr(str,srchsubstr,newsubstr)_valof
+ { let i,j,k_0,0,1
+   
+   while findsubstr(str,srchsubstr,lv i,lv j,k) do
+    { let t_q4(str|0)
+      let v_vec 40
+      let vv_vec 40
+      
+      k_i+q4(newsubstr|0)
+      q4(str|0)_i-1
+      if i eq 1 do q4(str|0)_0
+      append(str,newsubstr,v)
+      q4(str|0)_t
+      vv|0_0
+      until j eq t do 
+       { j_j+1
+         addch(pullch(str,j),vv)
+       }
+      append(v,vv,str)
+    }
+   resultis str
+ }
+
+        //search the indicated line, starting at the indicated character,(rv chnlv), for the first non-space or tab character., return a ptr to it in rv chnlv
+and scanpastst(line,chnlv) be
+ { let ch_pullch(line,rv chnlv)
+   
+   while ch eq $*s \ ch eq $*t do
+    { rv chnlv_rv chnlv+1
+      ch_pullch(line,rv chnlv)
+    }
+ }
+
+        //this fn returns the element (a character) at the specified position within the specified string
+and pullch(txt,cp)_valof
+ { if cp gr q4(txt|0) do help()
+   switchon cp rem 4 into
+    {
+    case 0:
+      resultis q4(txt|(cp/4))
+    case 1:
+      resultis q3(txt|(cp/4))
+    case 2:
+      resultis q2(txt|(cp/4))
+    case 3:
+      resultis q1(txt|(cp/4))
+    }
+ }
+
+        //this procedure replaces the element at the specified position within the specified string with the specified character
+and putch(ch,txt,cp) be
+ { if cp gr q4(txt|0) do help()
+   switchon cp rem 4 into
+    {
+    case 0:
+      q4(txt|(cp/4))_ch
+      return
+    case 1:
+      q3(txt|(cp/4))_ch
+      return
+    case 2:
+      q2(txt|(cp/4))_ch
+      return
+    case 3:
+      q1(txt|(cp/4))_ch
+      return
+    }
+ }
+
+        //append the specified character to the specified string
+and addch(ch,txt) be 
+ { let cp_q4(txt|0)+1
+   q4(txt|0)_cp
+   switchon cp rem 4 into
+    {
+    case 0:
+      txt|(cp/4)_(ch lshift 9),,0
+      return
+    case 1:
+      q3(txt|(cp/4))_ch
+      return
+    case 2:
+      q2(txt|(cp/4))_ch
+      return
+    case 3:
+      q1(txt|(cp/4))_ch
+      return
+    }
+ }
+
+        //append the string t2 to the string t1 and store result in the string t3
+and append(t1,t2,t3) _valof
+ { let i,j_q4(t1|0),q4(t2|0)
+   let v2_vec 100
+   for l_1 to j/4+1 do v2|(l-1)_t2|(l-1)
+   for l_1 to i/4+1 do t3|(l-1)_t1|(l-1)
+   for l_1 to q4(v2|0) do addch(pullch(v2,l),t3)
+   resultis t3
+ }
+
+        //this subroutine converts the indicated text string into a number...leading 
+	//spaces or tabs are NOT allowed. the string may be prefixed by a - character or a # 
+	//character or by both. the - character means negative, and the # character means octal (default case is decimal).
+and txttoint(v)_valof 
+ { let bm,bs,j,k_false,false,0,1
+   let w_vec 30
+   Unpackstring(v,w)
+   if w|1 eq $- do 
+    { bm_true
+      w|1_w|0-1
+      w_w+1
+    }
+   if w|1 eq $# do 
+    { bs_true
+      w|1_w|0-1
+      w_w+1
+    }
+   until w|0 eq 0 do
+    { j_j+(#17 & (w|(w|0)))*k
+      k_k*(bs=>8,10)
+      w|0_w|0-1
+    }
+   resultis bm=>-j,j
+ }
+
+and help() be
+{ let t_OUTPUT
+   OUTPUT_#101
+{ WriteS("A BCPL Program called HELP*n") ; finish} repeat
+}
+
+
+and numbargs(x)_valof
+{ let sp_lv x-2
+sp_sp-rh(rv(sp|0))
+resultis sp|1
+}
+
