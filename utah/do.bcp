@@ -1,0 +1,321 @@
+
+// <BCPL>DO.BCP.3     6-Jan-77 15:53:47    EDIT BY HALBERT
+// Changed to work on TOPS20, and call to ReadWord changed so that only
+///end-of-line characters will terminate input.
+
+// <BCPL>DO.BCP;7    13-APR-75 19:41:17    EDIT BY LEWIS
+// Added Jerry Wolf's changes as follows:
+// Defaults infut file extension to .DO .
+// Asks for input file if user has terminated his typein with <cr>,
+// otherwise doesn't.  So he can type:
+// @DO FILE<cr>
+// or
+// @DO<cr>
+// Input file: FILE.DO<cr>
+// <BCPL>DO.BCP;10    28-MAR-74 00:18:58 EDIT BY ROVNER
+// Changes for %^, and for the DO interrupt character.
+
+// DO.BCP -- A Better Runfil for TENEX
+// Rovner, 3/24/73
+
+get "<bcpl>head"
+get "<bcpl>utilhead"
+get "<bcpl>dicthead"
+get "<bcpl>psihead"
+get "<bcpl>openfilehead"
+get "<bcpl>jshead"
+get "<bcpl>whichsystem"
+
+manifest
+{                               // AC numbers for results from GJINF
+  JOBN :=          3
+  LOGDIR :=        1
+  CONNDIR :=       2
+  TTYN :=          4
+
+  EOFCHNL :=       10           // PSI channel number for EOF interrupt
+
+  PVECLN :=        1000         // size of free space for parameter
+                                ///strings and the dict.
+ }
+
+static
+{ pvec :=   vec PVECLN          // free storage space for parameter
+                                ///strings and
+                                // the dictionary
+
+// console I/O streams
+
+  ttyout := 0
+  ttyin :=  0
+  fh :=     0                   // fork handle for lower EXEC fork
+  io :=     0                   // lh will have jfn for primary input
+                                ///file for lower fork
+ }
+
+let Start() be
+{ let pn := 0                   // holds the largest numerical
+                                ///parameter # found so far
+  let intchar := $B             // default interrupt control character
+                                // Init. the Dictionary
+  pvec|0 := pvec+20             // space for string ptrs for
+                                ///numerically
+                                // specified parameters
+  InitDict(20,0)
+  ttyin := FindInput(0)
+  ttyout := CreateOutput(0)
+  OUTPUT :=
+    CreateOutput(sysIsTOPS20 => "do.xpstr;t" , "do.xpstr;s")
+                                // file used to hold the
+                                // expanded string for primary
+                                // input in the lower fork.
+
+// get the EXACT file name of the file which will hold the
+                                // expanded string
+  let xpstr := vec 20
+  { let v := vec 20
+    let x := vec 20
+    v|2 := OUTPUT
+    v|3 := 0
+    v|1 := -1,,x
+    JSYS(jsJFNS,v)
+    IDPB(0,v+1)
+    ASCIZToString(x,xpstr)
+   }
+
+// open the source file, and expand the string in it
+                                // into the output (xpstr) file.
+  let ac := vec 16
+  ac|1 := ttyin
+  let source := 1               // 1 implies ask user for Input file:
+  if sysIsTENEX & JSYS(jsBKJFN,ac)=2
+  do if BIN(ttyin)=$*s do source := 2
+getin:
+  INPUT := OpenFile(ofRead,source,7,".DO",ofOldFile)
+  if INPUT le 0 do
+  { ERSTR(-1)
+    source := 1
+    goto getin
+   }
+  if sysIsTENEX & JSYS(jsBKJFN,ac)=2
+  do if BIN(ttyin)=$*n do goto nocr
+  WriteS(ttyout, "*c*l")
+nocr:
+  let ch := nil
+  { Readch(INPUT,lv ch)
+    if EofFlg do break
+    if ch=$%
+    do
+    { Readch(INPUT,lv ch)
+      test isnumber(ch) do
+      { let thispn := ch&#17    // limit: 9 parameters
+        if thispn > pn do
+        { for i := pn+1 to thispn do readparameter(i)
+          pn := thispn
+         }
+        WriteS(pvec|thispn)
+        loop
+       }
+      or switchon ch into
+      { case $%: PBOUT($%) ;loop
+
+        case $*^:
+                 intchar := PBIN() ; loop
+
+        case $D:
+        case $d:
+                 { let v := vec 20
+                   WriteS(MakeDate(v))
+                   loop
+                  }
+        case $J:
+        case $j: WriteN(gjinfo(JOBN)) ; loop
+
+        case $L:
+        case $l: wdir(LOGDIR) ; loop
+
+        case $C:
+        case $c: wdir(CONNDIR) ; loop
+
+        case $T:
+        case $t:
+                 { let t := gjinfo(TTYN)
+                   test t=-1 then WriteS("(detached)")
+                   or WriteOct(t)
+                   loop
+                  }
+        case $R:
+        case $r:
+                 { let v := vec 20
+                   v|1 := -5
+                   JSYS(jsRUNTM,v)
+                   WriteN(v|1)
+                   WriteS("*sms")
+                   loop
+                  }
+
+        default:
+                 {              // read the param name, look it up, if
+                                ///found, output the
+                                // param text; otherwise, get param
+                                ///text and enter it
+                                // with the name in the dict and output
+                                ///it.
+                   let firstch := ch
+                   let v := vec 200
+                   let str := vec 50
+                   v|0 := 0
+                   ch := PBIN()
+                   until ch=firstch
+                   do
+                   { v|0 := v|0+1
+                     if v|0>190
+       do Help("DO: parameter descriptor string is too long*c*l") repeat
+                     v|(v|0) := ch
+                     ch := PBIN()
+                    }
+                   Packstring(v,str)
+                   let val := 0
+                   let t := Enter(str,lv val,1) // true => parameter
+                                                // already gotten
+                   unless t do lh val|0 := readparameter(str)
+                   WriteS(lh val|0)
+                   loop
+                  }
+       }                                        // end switchon
+     }
+    test ch=$*c
+    ifso
+    { Readch(INPUT,lv ch)                       // Check the next char.
+      test ch=$*l
+      ifso Writech(OUTPUT, sysIsTENEX => $*n, $*c)
+                                // Convert *c*l to *n on TENEX, oro to
+                                ///simply *c on TOPS20.
+      ifnot
+      { Writech(OUTPUT, $*c)    // It was not *c*l.
+        Writech(OUTPUT, ch)
+       }
+     }
+    ifnot Writech(OUTPUT, ch)   // Not a *c.
+   }
+  repeat                        // go get the next char from the input
+                                ///file
+
+// Done expanding the text into the output file
+
+  EndRead(INPUT)
+  EndWrite(OUTPUT)
+  WriteS(ttyout,"DO interrupt character:*s*^")
+  BOUT(ttyout,intchar)
+  WriteS(ttyout, "*c*l")
+  let v := vec 20
+  v|1 := #200000,,0             // Make a lower fork
+  unless JSYS(jsCFORK,v)=2 do Help("CFORK failed*c*l")
+  fh := v|1
+  v|1 := #100001,,0
+  v|2 := -1,,'<system>exec.exe'
+  unless JSYS(jsGTJFN,v)=2
+  do Help("GTJFN failed to get <system>EXEC.EXE*c*l")
+  v|1 := fh,,rh v|1             // Set up the EXEC in it
+  JSYS(jsGET,v)
+
+// disable ^c for lower fork
+
+  v|1 := fh
+  JSYS(jsRPCAP,v)
+  v|2 := v|2&#377777777777
+  v|1 := fh
+  JSYS(jsEPCAP,v)
+
+  let chnl := 1
+  ATI(intchar&#37,chnl)
+  PSISetCh(2,chnl,fini1)        // Make sure this fork gets the
+                                ///interrupt, not the lower fork
+
+  let Input := FindInput(xpstr)
+  and Ch := nil
+  v|1 :=#100                    // Primary input JFN.
+
+  { for i := 1 to 127 do        // Terminal buffer size.
+    { Ch := BIN(Input)
+      if Ch=#777 do break       // End of file.
+      v|2 := Ch                 // Simulate terminal input.
+      JSYS(jsSTI,v)
+     }
+
+    JSYS(jsDIBE,v)              // Wait for input buffer to empty.
+   }
+  repeatuntil Ch=#777
+
+  let v := vec 20
+  v|1 := fh
+  JSYS(jsKFORK,v)
+
+  v|1 := Input
+  unless JSYS(jsDELF,v)=2 do Help("DO: DELF failed*c*l")
+  WriteS(ttyout,"Did.*c*l")
+  finish repeat
+ }
+
+// This is called by the dict pkg to allocate storage.
+
+and DictRetFree() be Help("DO: DictRetFree was called!!!*c*l")
+
+and DictGetFree(n) := valof
+{ let val := pvec|0+1
+  pvec|0 := pvec|0+n+1
+  resultis val
+ }
+
+// a predicate
+
+and isnumber(ch) := $1 le ch le $9
+
+// parameters are "words" optionally preceded by *s, *t, *c, *l, *c*l
+// and followed by one of these
+
+and readparameter(i) := valof
+{ let ch := nil
+  let t1,t2 := OUTPUT,INPUT
+  OUTPUT,INPUT := ttyout,ttyin
+  test i le 9 then
+  { WriteS("P")
+    WriteN(i)
+   }
+  or WriteS(i)
+  WriteS(":*s")
+  let s1 := pvec|0
+  ReadWord(INPUT, s1, lv ch, true, "*c*l*n")
+  pvec|0 := pvec|0+(q4 s1|0)/4+1
+  if pvec|0>pvec+PVECLN-10
+  do Help("DO: out of string storage space*c*l") repeat
+  if i le 9 do pvec|i := s1
+  OUTPUT,INPUT := t1,t2
+  resultis s1
+ }
+
+// Get job info
+
+and gjinfo(x) := valof
+{ let v := vec 20
+  JSYS(jsGJINF,v)
+  resultis v|x
+ }
+
+and fini1() be
+{ WriteS(ttyout,"Interrupted from DO*c*l*^C*c*l")
+  let v := vec 20
+  v|1 := FindInput(0)
+  JSYS(jsCFIBF,v)               // CFIBF ; clear the tty input buffer
+  finish
+ }
+
+// Write the directory name (a string) corresponding to
+                                // the given directory number.
+and wdir(x) be
+{ let v := vec 20
+  v|1 := OUTPUT
+  v|2 := gjinfo(x)
+  unless JSYS(jsDIRST,v)=2 do Help("DO: DIRST failed*c*l")
+ }
+

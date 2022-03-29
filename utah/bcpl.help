@@ -1,0 +1,32 @@
+Command format is:
+<file list> or <file list><switches>
+
+Switches may be passed to the compiler from CCL by enclosing them in
+parentheses after the source file name.
+
+File list is:
+<source> or <rel file>=<source> or <list file>,<rel file>=<source>
+(_ may be used instead of =)
+
+Switch format is:
+/<switch>/<switch>... or (<switch><switch>...)
+
+Default extensions are
+.BCP for source files
+.REL for rel files
+.LST for list file
+.HDR for pre-parsed header files (loaded by ::get, created by switch o)
+
+The following switches are supported:
+c -- no code generation (automatically sets switches s and l)
+d -- debugging run (::ifdebug lines are compiled, "debugging" is "true")
+f -- error message go to a file instead of the terminal (<filename>.g)
+i -- internal routines are generated, and number of arguments tested
+l -- no long symbol table (suppresses manifest, global, and structures)
+n -- old calling sequence is output.
+o -- output compiled tree after CAE phase (sets c, s, and l switches)
+s -- no symbol table (automatically sets the l switch)
+u -- upper case input file (see manual for details)
+
+Other switches are useful only for compiler debugging. They are:
+w(izard);y(repeat CAE);p(rint lexemes);t(ree1);e(tree2)

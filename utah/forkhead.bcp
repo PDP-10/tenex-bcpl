@@ -1,0 +1,127 @@
+//<BCPL>FORKHEAD.BCP;30009    15-MAR-76 15:46:07    EDIT BY LEWIS
+// change global numbers from #1700-#1777 to 7500-7599
+//<BCPL>FORKHEAD.BCP;24     5-JAN-76 16:26:45    EDIT BY LEWIS
+//<BCPL>FORKHEAD.BCP;23     2-JAN-76 16:59:02    EDIT BY LEWIS
+
+::request <bcpl>frklib
+
+manifest
+{ cfSameMap  :=         #400000,,0
+  cfSameCaps  :=        #200000,,0
+  cfSetACs  :=          #40000,,0
+  fhThisFork  :=        #400000
+  fhSuperior  :=        rhz -1
+  fhTopOfJob  :=        rhz -2
+  fhCurrentAndInferiors  :=
+                        rhz -3
+  fhInferiors  :=       rhz -4
+  fhAllInJob  :=        rhz -5
+  fhTopOfGroup  :=      rhz -6
+ }
+
+global
+{ CreateFork:   7501
+  KillFork:     7502
+  FreezeFork:   7503
+  ResumeFork:   7504
+  SetForkACs:   7505
+  ReadForkACs:  7506
+  HaltFork:     7507
+  WaitForFork:  7510
+  ReleaseFork:  7511
+  ForkStatus:   7512
+  IsForkHalted: 7534
+  SpliceFork:   7513
+  StartFork:    7514
+  LoadFork:     7515
+  GetForkIO:    7516
+  SetForkIO:    7517
+  EnableForkCaps:
+                7520
+  ReadForkCaps: 7521
+  CreateForkGroup:
+                7522
+  GetGroupInfo: 7523
+  TopOfGroup:   7524
+  GetGroupTTY:  7525
+  SetGroupTTY:  7526
+  GetForkHandle:
+                7527
+  SaveFork:     7530
+  SSaveFork:    7531
+  GetEntryVector:
+                7532
+  SetEntryVector:
+                7533
+ }
+
+manifest
+{ pmDelete  :=      -1
+  pmRead  :=        #100000
+  pmWrite  :=       #40000
+  pmExecute  :=     #20000
+  pmExists  :=      #10000
+  pmIndirect  :=    #4000
+  pmTrapToUser  :=  #1000
+  pmCopyOnWrite  := #400
+  pmPrivate  :=     #200
+ }
+
+global
+{ PMAP:           7540
+  RMAP:           7541
+  ReadPageAccess: 7542
+  SetPageAccess:  7543
+  ForkWrite:      7544
+  ForkRead:       7545
+  ForkWriteS:     7546
+  ForkReadS:      7547
+ }
+
+global
+{ AmTrapped:         7550
+  ResetTraps:        7551
+  ReadTrapChannel:   7552
+  SetTrapChannel:    7553
+  RemoveTraps:       7554
+  SetTraps:          7555
+  ReadTrappedFork:   7556
+  UnTrapFork:        7557
+  TrapJsyses:        7560
+  JTRAP:             7561
+  ResumeTrappedFork: 7562
+  SetForkError:      7563
+ }
+
+external
+{ jtfns
+ }
+
+global
+{ CreateProc:     7570
+  SubTask:        7571
+  CreateSignal:   7572
+  ReleaseSignal:  7573
+  WaitForSignal:  7574
+  Signal:         7575
+  RestartProc:    7576
+  RestartSubTask: 7577
+ }
+
+manifest
+{ jsSETER  :=        #336
+  jsGTSIG  :=        #730
+  jsRLSIG  :=        #731
+  jsWTFOR  :=        #732
+  jsSIGNL  :=        #733
+  SGNLX1  :=         #602001
+  SGNLX2  :=         #602002
+  SGNLX3  :=         #602003
+  SGNLX4  :=         #602004
+  SGNLX5  :=         #602005
+  SGNLX6  :=         #602006
+  SGNLX7  :=         #602007
+  SGNLX8  :=         #602010
+  sgDontWait  :=     #200000,,0
+  sgDataSupplied  := #100000,,0
+ }

@@ -150,3 +150,41 @@ utilhead.bcp.30008 1976-08-03
 write.bcp.3 1974-12-17
 xntlib.mac.1 1974-12-17
 xntlib.mac.3 1975-06-14
+
+jshead.bcp 1981-06-20 23:43 
+whichsystem.bcp 1980-02-13 06:20 
+psihead.bcp 1980-02-13 06:17 
+ttylib.bcp 1987-08-10 08:35 
+xray.bcp 1979-05-10 11:32 
+openfilehead.bcp 1980-02-13 06:17 
+do.doc 1980-02-13 06:05 
+errmsgs.bin 1980-02-13 06:06 
+forkhead.bcp 1980-02-13 06:08 
+bcpl.txt 1978-11-21 11:45 
+cg.txt 1979-09-30 10:58 
+do.bcp 1980-02-13 06:05 
+globals.list 1980-02-13 06:09 
+icllib.mas 1978-11-30 11:46 
+monsym.bcp 1979-05-11 10:21 
+freestorehead.bcp 1980-02-13 06:08 
+xntlib.mac 1980-02-13 06:21 
+numgen.symtab 1980-02-13 06:16 
+nlhead.bcp 1980-02-13 06:15 
+bcpl.dictionary 1980-02-13 05:53 
+$$dir.log 1983-12-17 20:11 
+dicthead.bcp 1980-02-13 06:05 
+bcpl.help 1980-02-13 05:57 
+sysall.bcp 1979-05-10 11:33 
+stringhead.bcp 1980-02-13 06:18 
+bclmac.mac 1975-03-06 14:21 
+subfil.bcl 1978-09-15 15:15 
+of.description 1980-02-13 06:16 
+head.bcp 1980-02-13 06:10 
+bcpl.errors 1980-02-13 05:53 
+case.help 1980-02-13 06:04 
+bcpmac.mac 1980-02-13 06:01 
+frklib.doc 1980-02-13 06:08 
+manual.rnf 1980-02-13 06:11 
+utilhead.bcp 1980-02-13 06:20 
+bcpmac.unv 1980-02-13 06:01 
+bcpmac.doc 1980-02-13 06:00 

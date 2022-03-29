@@ -1,0 +1,603 @@
+// 4/13/79 Beeler - install DL command
+// 3/8/79 Beeler - fix fencepost making pkt length 1 too long
+// 12/19/78 Beeler - type field in openvec from control to command
+// 12/14/78 Beeler - command packets for AM & DM, 20-bit addresses
+// 8/4/77 Beeler - change prompt, add default radix features
+// 8/4/77 Beeler - fix typeout range bug in DM, add comment feature
+// 5/10/77 Beeler - pad ?'s with space to avoid STACON error mode
+// 5/9/77 Beeler - revise timer code, increase receive window to 2
+// 4/26/77 Beeler - send only packet size needed, not full size
+// 4/26/77 Beeler - accept textless open from TIU
+// 3/21/77 Beeler - fix DI of no arg bug
+// 3/11/77 Beeler - add PID-name declaration for operator control
+// 3/11/77 Beeler - reduce DI arg check, add restart init
+// 12/17/76 Beeler - delete Load Overlay command, enlarge hdr for CAP3
+
+//XRAY provides cross radio debugging of PRs from a console at the
+//station.  Its command structure is almost identical to the PROM
+//operating system and the CNTRL PCP overlay supplied by Collins.
+//Additional features include more flexible input formats and more
+//extensive error checking.
+
+get "<ELF>ELFHEAD.BCP"
+
+::reserve map
+::synonym T true
+::synonym F false
+::synonym xor neqv
+
+external [ pname ]
+
+manifest [
+debuguse := 1	//use field value for debug process
+hdr := 11	//words in packet header
+linebufsiz := 100	//size of typein line buffer, in bytes
+opcodeIPP := 1	//connection process IPP i/o op code
+opcodenet := 3	//packet radio network i/o op code
+opcodetimer := 5	//timer op code
+opcodeTTY := 7	//tty input op code
+r50ipp := #35320	//radix 50 for ipp
+r50xra := #114321	//radix 50 for xra
+r50yspsp := #116100	//radix 50 for y space space
+valtabsiz := 40	//size of value table, in words
+]
+
+static [
+acs:	vec 4*2-1	//ac vector for emt calls
+bot:	double 0	//bottom address of AM or DM block
+ch:	0	//typein char
+cmd:	0	//command typein buffer
+connopenflg:	F	//T = connection is open
+connPID:	0	//connection process identity
+defaultradix:	16	//radix for output and unflagged input
+hexval:	double 0	//hexidecimal value in readline routine
+inpkt:	vec 2*140-1	//buffer for inbound packet
+linebuf:	vec linebufsiz-1	//typein line buffer
+//netiniorb is iorb for input from net; unit set by openconn
+netiniorb:	table r50ipp,0,opcodeIPP,0,1,127*2,0,0,0,0
+//netoutiorb is iorb for output to net; unit set by openconn
+netoutiorb:	table r50ipp,0,opcodeIPP,0,2,127*2,0,0,0,0
+numvals:	0	//number of values in valtab
+//openvec is used to open a conn; openconn sets openvec^1 to device ID
+//"use field" in station ID; PR ID; mask; type (5 = command);
+//conn sets type, conn sets route from above arg; signal op code,
+//signal on ACKs, sequenced; tx window = 1, rx window = 2
+openvec:	table debuguse,0,-1,5,#140000,opcodenet*#400+3,#402
+outpkt:	vec 2*140-1	//buffer for outbound packet
+pname:	double #23064316100	//radix 50 process name, xray
+temp:	double 0	//fudge because extend (expression) fails
+top:	double 0	//top address of AM or DM block
+ttyinstate:	0	//tty input state
+		//0 = no outstanding StartInput
+		//1 = outstanding StartInput, one only
+		//2 = StartInput finished and character is in ch
+valtab:	vec 2*valtabsiz-1	//table of typed in numbers
+val0hi:	0	//high order word of valtab^0
+val1hi:	0	//high order word of valtab^1
+]
+
+structure [
+//the input output request block, or iorb, is an ELF convention
+iorb [
+  dev word
+  unit word
+  opcode word	//vmsid in hi byte
+  bufadr word
+  func word
+  breq word
+  status word
+  btrans word
+  devbadrhi word
+  devbadrlo word ]
+wordvec^0^1000 word	//to circumvent 11bcpl addressing
+]
+
+//following map allows indexing by words instead of bytes
+map [
+acs: wordvec
+inpkt: wordvec
+openvec: wordvec
+outpkt: wordvec
+valtab: wordvec
+]
+
+//this is the start of the XRAY program
+//Start does initialization, top level command scan and dispatch
+let Start() be [
+//input and output streams defaulted to TTY
+  connopenflg := F
+  ttyinstate := 0
+  netiniorb>>iorb.bufadr := inpkt	//no cross refs in bcpl statics
+  netoutiorb>>iorb.bufadr := outpkt
+  acs^0 := 0	//PID is self
+  acs^1 := r50xra
+  acs^2 := r50yspsp
+//  ELFCAL(emtPRNAM,acs,acs)	//declare PID-name
+  WriteS("*C*LX-RAY 4/13/79*C*L")	//print herald
+  [ WriteS("X>")	//print prompt
+    cmd := 0
+    [ readch()
+      switchon ch into	//service typed character
+      [ case -1: break
+        case $?:
+          WriteS("DM (DISPLAY MEM), AM (ALTER MEM), DI (DEST ID)*C*L")
+          WriteS("RD RH RO (SET RADIX), CL (CLOSE), DL (DOWN LOAD)*C*L")
+          break
+        case #177: Writech($\)	//177 is rubout
+        case $\:
+          test cmd = 0
+            ifso WriteS("*C*LX>")
+            ifnot cmd := cmd rshift 8
+          endcase
+        case $*S:
+          switchon cmd into	//service command
+          [ case $A,,$M: AM() ; break
+            case $C,,$L: CL() ; break
+            case $D,,$M: DM() ; break
+            case $D,,$I: DI() ; break
+            default: WriteS(" ?*C*L") ; break ]
+        case $;: until ch = $*C do readch()
+        case #3: Writech($*C)
+        case #15: Writech($*L)
+          if cmd = 0 do break	//null command
+          if cmd = ($C,,$L) do [ CL() ; break ]
+          if cmd = ($D,,$L) do [ DL() ; break ]
+          if cmd = ($R,,$D) do [ defaultradix := 10 ; break ]
+          if cmd = ($R,,$H) do [ defaultradix := 16 ; break ]
+          if cmd = ($R,,$O) do [ defaultradix := 8 ; break ]
+          WriteS(" ?*C*L") ; break
+        default: cmd := (cmd lshift 8) + ch ] ]
+    repeat ]	//service next character
+  repeat	//service next command
+]
+
+//AM prepares an AM packet and sends it
+and AM() be [
+  let pntr := 0	//pointer into packet buffer
+  let cmdcnt := 0	//count of commands in packet
+  unless isopen() do return
+  pntr := hdr + 1	//1 word for AM text header
+  [ switchon readline(valtabsiz) into
+    [ case -2: WriteS("AM ABORTED*C*L") ; return
+      case -1: endcase
+      case 0: break
+      case 1: WriteS(" ?*C*L") ; endcase
+      default:
+        bot, (lv bot)|2 := valtab^0, val0hi	//double precision
+        temp := numvals - 2
+        double top := bot %+ extend (temp)
+        if rangechk() = F do endcase
+        if testroom(pntr) = F do endcase
+        double outpkt^pntr := bot
+        double outpkt^(pntr+2) := top
+        pntr := pntr + 3
+        for i := 1 to numvals-1 do outpkt^(pntr+i) := valtab^i
+        pntr := pntr + numvals
+        cmdcnt := cmdcnt + 1 ]
+    WriteS(" AM ") ]
+  repeat	//permit another AM block in this packet
+  outpkt^hdr := #10000 + cmdcnt	//AM command header
+  sendpkt(pntr,F)
+  return
+]
+
+//DM prepares a DM packet, sends it, and prints reply from PR
+and DM() be [
+  let pntr := 0	//pointer into packet buffer
+  let cmdcnt := 0	//count of commands in packet
+  unless isopen() do return
+  pntr := hdr + 1	//1 word for DM text header
+  [ switchon readline(2) into
+    [ case -2: WriteS("DM ABORTED*C*L") ; return
+      case -1: endcase
+      case 0: break
+      case 1: valtab^1 := valtab^0 ; val1hi := val0hi
+      case 2:
+        bot, (lv bot)|2 := valtab^0, val0hi	//double precision
+        top, (lv top)|2 := valtab^1, val1hi
+        if rangechk() = F do endcase
+        if bot dgrm top do [
+          WriteS("LIMITS BACKWARDS*C*L")
+          endcase ]
+        if testroom(pntr) = F do endcase
+        double outpkt^pntr := bot
+        double outpkt^(pntr+2) := top
+        double temp := top %- bot
+        pntr := pntr + 5 + temp	//high order temp = 0
+        cmdcnt := cmdcnt + 1 ]
+    WriteS(" DM ") ]
+  repeat	//permit another DM block in this packet
+  outpkt^hdr := #10400 + cmdcnt	//DM command header
+  if sendpkt(pntr,T) = -1 do return
+  pntr := hdr + 1	//1 word for DM text header
+  unless inpkt^hdr = #10400 + cmdcnt do [
+    WriteS("DM REPLY IS GARBLED*C*L")
+    return ]
+  until cmdcnt = 0 do [
+    double bot := inpkt^pntr
+    double top := inpkt^(pntr+2)
+    pntr := pntr + 4
+    temp := pntr - 127
+    if extend (temp) %+ top %- bot %> double 0 do [
+      WriteS("DM REPLY IS GARBAGE")
+      break ]	//exit loop as if packet processing complete
+    writehex((lv bot)|2)	//address in PR memory
+    writehex(bot)
+    [ WriteS("  ")
+      writehex(inpkt^pntr)	//contents of PR memory
+      pntr := pntr + 1
+      double bot := bot %+ double 1
+      if (bot dgrm top)\((bot & 7) = 0) do [
+        WriteS("*C*L")
+        unless bot dgrm top do [
+          writehex((lv bot)|2)
+          writehex(bot) ] ] ]
+    repeatuntil bot dgrm top
+    cmdcnt := cmdcnt - 1 ]
+  WriteS("*C*L")
+  return
+]
+
+//DI closes the existing connection, if any, and then
+//opens a connection to the ID specified by typein
+and DI() be [
+  let device := 0	//ID of target device
+  switchon readline(1) into
+  [ case -2:
+    case -1: return
+    case 0: WriteS(" ?*C*L") ; return
+    default: endcase ]
+  device := valtab^0
+  if device rshift 12 = 0 do [
+    WriteS("ID CANNOT BE A STATION*C*L")
+    return ]
+  if connopenflg do closeconn()
+  if openconn(device) do WriteS("OK")
+  WriteS("*C*L")
+  return
+]
+
+//CL closes the existing connection, if any
+and CL() be [
+  if connopenflg do closeconn()
+  WriteS("OK*C*L")
+  return
+]
+
+//DL initiates down line load, which may end with NO ACK -- CLOSED
+and DL() be [
+  unless isopen() do return
+  outpkt^hdr := #30400	//DL command
+  sendpkt(hdr+1,F)
+  return
+]
+
+//isopen prints error message if connection is not open
+and isopen() := valof [
+  test connopenflg
+    then resultis T	//return true if open
+    or [ WriteS("NO CONN OPEN - USE DI*C*L")
+      resultis F ]
+]
+
+//readline reads a line of numerical arguments from the console;
+//arguments are put in succssive words in valtab;
+//value returned is number of arguments typed, or
+//-1 if a typein error occurred, including exceeding the maximum
+//number of values as specified in the argument to readline, or
+//-2 if an existing connection was aborted or if
+//rubout was typed with no characters buffered to rub out
+//hexval is actually in default radix, not necessarily 16
+and readline(maxnumvals) := valof [
+  let chptr := 0	//linebuf index where next char goes
+  let chcnt := 0	//char count
+  let numflg := F	//T = accumulating a number
+  let negflg := F	//T = seen minus sign
+  let octflg := F	//T = seen #
+//let hexval := double 0	//hexidecimal value (now a static)
+  let decval := double 0	//decimal value
+  let octval := double 0	//octal value
+  numvals := 0	//number of values parsed so far
+  val0hi := 0
+  val1hi := 0
+  [ numflg := F	//clean up numerical typein state
+    negflg := F
+    octflg := F
+    double hexval := double 0
+    double decval := double 0
+    double octval := double 0
+    [ test chptr = chcnt	//are all buffered chars serviced?
+        ifso [
+          ch := readch()	//yes, get char from keyboard
+          rh linebuf|chptr := ch	//save char in linebuf
+          chcnt := chcnt + 1 ]
+        ifnot ch := rh linebuf|chptr	//no, supply fake typed char
+      chptr := chptr + 1
+      switchon ch into	//service char
+      [ case -1: WriteS("*C*L") ; resultis -2	//conn was aborted
+        case #3: Writech ($*C) ; ch := $*C	//control-c or ...
+        case #15: Writech ($*L)	//... cr terminates line
+          if numflg do [
+            if octflg do double hexval := octval
+            newval(negflg) ]
+          resultis numvals	//normal, successful return
+        case #12:	//ignore linefeed
+          chcnt := chcnt - 1
+          chptr := chptr - 1
+          endcase
+        case $*S:	//space terminates number
+          unless numflg do [
+            chcnt := chcnt - 1
+            chptr := chptr - 1
+            endcase ]
+          if octflg do double hexval := octval
+          newval(negflg)
+          break	//clean up numerical typein state
+        case $#: octflg := T ; endcase
+        case $-: negflg := not negflg ; endcase
+        case $.:	//decimal point terminates number
+          unless numflg do [
+            WriteS(" ?")
+            chcnt := chcnt - 1
+            chptr := chptr - 1
+            endcase ]
+          double hexval := decval
+          newval(negflg)
+          break	//clean up numerical typein state
+        case $A to $F: ch := ch - $A + $0 + 10	//good digit
+        case $0 to $9:
+          if (numflg = F)&(numvals = maxnumvals) do [
+            WriteS("*C*LTOO MANY ARGUMENTS*C*L")
+            resultis -1 ]
+          ch := ch - $0
+          numflg := T
+          double hexval := hexval %* extend defaultradix %+ extend ch
+          double decval := decval %* double 10 %+ extend ch
+          double octval := octval %* double 8 %+ extend ch
+          endcase
+        case #177: Writech($\)	//rubout or ...
+        case $\:	//... backslash deletes last char
+          chptr := 0
+          chcnt := chcnt - 2
+          if chcnt < 0 do [ WriteS("*C*L") ; resultis -2 ]	//escape
+          numvals := 0
+          break	//clean up num typein
+        case $R-#100:	//control-R retypes line
+          chcnt := chcnt - 1
+          chptr := chptr - 1
+          WriteS("*C*L")
+          for i := 0 to chcnt-1 do Writech(rh linebuf|i)
+          endcase
+        default:
+          WriteS(" ?")
+          chcnt := chcnt - 1
+          chptr := chptr - 1 ]
+      if chcnt = linebufsiz do [
+        WriteS("*C*LLINE TOO LONG*C*L")
+        resultis -1 ] ]
+    repeat ]	//service next character
+  repeat	//parse another number
+]
+
+//newval is used by readline when a new number has been accumulated
+and newval(negative) be [
+  if negative do double hexval := 0 %- hexval
+  valtab^numvals := hexval	//low order word
+  if numvals = 0 do val0hi := (lv hexval)|2	//high order word if...
+  if numvals = 1 do val1hi := (lv hexval)|2	//...0th or 1st value
+  numvals := numvals + 1
+  return
+]
+
+//readch puts a typed character into ch,
+//fielding other events which may occur while waiting;
+//the character is also returned as the value of readch
+and readch() := valof [
+  let data := 0	//data in the ELF SIGNAL sense
+  switchon ttyinstate into
+  [ case 0:
+      StartInput(opcodeTTY)	//this is the basic char request
+      ttyinstate := 1
+    case 1:
+      [ switchon WAIT(lv data) into
+        [ case opcodenet:
+            if conntrouble(data) resultis -1
+            endcase
+          case opcodetimer:
+            endcase
+          case opcodeTTY:
+            ch := rh (rv data>>iorb.bufadr) & #177
+            break ] ]
+      repeat	//event was not a char, so try again
+      endcase
+    case 2: endcase ]
+  ttyinstate := 0
+  if (ch > #140)&(ch < #173) do ch := ch - #40	//force case to upper
+  Writech(ch)	//echo the char
+  resultis ch
+]
+
+//writehex writes its argument as a 4 column unsigned number
+//user may change radix, initially hexadecimal
+and writehex(num) be [
+  WriteNumber(OUTPUT,num,defaultradix,4,#40000)
+  return
+]
+
+//testroom checks that enough room remains in the packet for
+//the AM or DM command being prepared; value returned is F if not
+//enough room remains, and T if enough does remain
+and testroom(pntr) := valof [
+  if 127 - 4 - pntr le 0 do [
+    WriteS("NO ROOM IN PACKET*C*L")
+    resultis F ]
+  temp := 127 - 5 - pntr
+  if top %- bot %> extend (temp) do [
+    WriteS("ROOM IN PACKET FOR ONLY ")
+    WriteN(127-4-pntr)
+    WriteS(".*C*L")
+    resultis F ]
+  resultis T
+]
+
+//rangecheck checks the validity of its arguments as being a legal
+//display or alter memory range; checks for non existant memory
+//could go here but are not needed; value returned is T if ok
+//or F if bad
+and rangechk() := valof [
+  if (((lv bot)|2 \ (lv top)|2) & #177760) > 0 do [
+    WriteS("ADDRESS > FFFFF ILLEGAL*C*L")
+    resultis F ]
+  resultis T
+]
+
+//openconn opens a connection to the device ID specified by the
+//argument to openconn; value returned is T if ok or F if failure
+and openconn(device) := valof [
+  openvec^1 := device
+  acs^0 := 3	//connection type, 3 = specific SPP
+  acs^1 := openvec
+  ELFCAL(emtCONNOPEN,acs,acs)
+  if acs^0 = -1 then [
+    WriteS("OPEN ATTEMPT FAILED*C*L")
+    resultis F ]
+  connPID := acs^0
+  netiniorb>>iorb.unit := acs^1
+  netoutiorb>>iorb.unit := acs^2
+  connopenflg := T
+  resultis T
+]
+
+//sendpkt sends the packet in the buffer, outpkt, on the connection
+//which must be open; if the argument to sndpkt is T rather than F,
+//sndpkt sets a timer and tries to obtain a response packet
+//in the buffer, inpkt; sndpkt waits until the outbound packet is
+//acknowledged, or, if a reply is needed, until either the reply
+//arrives or the timer expires; other events which may occur while
+//waiting are fielded; the value returned is 0 for success or
+//-1 if the connection was aborted or the timer expired
+and sendpkt(numwords,needreply) := valof [
+  let data := 0	//data in the ELF SIGNAL sense
+  swapbytes(outpkt)	//transfer to station PR will swap bytes
+  netoutiorb>>iorb.breq := 2 * numwords
+  SIO(netoutiorb)
+  if needreply do [
+    SIO(netiniorb)
+    settimer() ]
+  switchon WAIT(lv data) into
+  [ case opcodeIPP:
+      if (data = netiniorb) & (netiniorb>>iorb.status > 0) & needreply
+        do test netiniorb>>iorb.btrans = 2 * hdr
+          then SIO(netiniorb)	//textless, so ask for another
+          or [ swapbytes(inpkt) ; resultis 0 ]	//got reply, all ok
+      endcase
+    case opcodenet:
+      if conntrouble(data) resultis -1
+      unless needreply resultis 0	//normal return if need no reply
+      endcase
+    case opcodetimer:
+      if needreply do [
+        WriteS("TIMEOUT - NO REPLY*C*L")
+        resultis -1 ]
+      endcase
+    case opcodeTTY:
+      ch := rh (rv data>>iorb.bufadr) & #177
+      ttyinstate := 2
+      endcase ]
+  repeat	//acknowwledgement or reply still needed, try again
+]
+
+//swapbytes swaps bypes of a packet to compensate for transfer
+//through IMP11A interface to or from the station PR
+and swapbytes(pktbuf) be [
+  for i := hdr to 127 do
+    pktbuf|(2*i) := rh pktbuf|(2*i),,lh pktbuf|(2*i)
+  return
+]
+
+//abortconn forces the death of a connection, and also is used
+//as the final handshake with the connection process to say XRAY
+//will never talk to the connection process about this connection again;
+//fields other events which may occur while connection dies;
+//argument to abortconn says whether connection process has
+//already signaled abortion of connection
+and abortconn(arg) be [
+  let data := arg	//data in the ELF SIGNAL sense
+  SIGNL(connPID,200,netoutiorb>>iorb.unit)
+  until lhz data = 4 do [
+    switchon WAIT(lv data) into
+    [ case opcodeIPP: data := 0 ; endcase
+      case opcodenet: endcase
+      case opcodetimer: endcase	//timer data is always zero
+      case opcodeTTY:
+        ch := rh (rv data>>iorb.bufadr) & #177
+        ttyinstate := 2
+        data := 0	//otherwise data is iorb in library (garbage)
+        endcase ] ]
+  connopenflg := F
+  return
+]
+
+//closeconn closes the connection, which must be open; a timer is
+//started and if it expires before receipt of the close packet is
+//signaled, the conn is aborted; other events which may occur while
+//waiting are fielded
+and closeconn() be [
+  let data := 0	//data in the ELF SIGNAL sense
+  SIGNL(connPID,100,netoutiorb>>iorb.unit)
+  SIO(netiniorb)	//read close packet
+  settimer()
+  switchon WAIT(lv data) into
+  [ case opcodeIPP: endcase
+    case opcodenet:
+      test lhz data = 3
+        then break	//got close from PR
+        or if conntrouble(data) return	//return if conn aborted
+      endcase
+    case opcodetimer:
+      WriteS("TIMEOUT - NO CLOSE --")
+      abortconn(-1)
+      WriteS(" CLOSED*C*L")
+      return	//return since PR tardy returning close
+    case opcodeTTY:
+      ch := rh (rv data>>iorb.bufadr) & #177
+      ttyinstate := 2
+      endcase ]
+  repeat	//event did not terminate connection; try again
+  abortconn(data)
+  return
+]
+
+//conntrouble examines the data in a signal from the connection
+//process and takes action as appropriate; argument to conntrouble is
+//the data; value returned is T if trouble was indicated and the
+//connection has been closed, or F if no trouble
+and conntrouble(data) := valof [
+  switchon lhz data into
+  [ case 0: resultis F	//ACK NOTIFICATION
+    case 1: WriteS("NO ACK") ; endcase
+    case 2: WriteS("ILLEGAL SYN RXED") ; endcase
+    case 3: WriteS("CLOSE FROM PR") ; endcase
+    case 4: WriteS("CONNECTION GONE") ; endcase
+    case 5: WriteS("CONN PROCESS TROUBLE") ; endcase
+    default: WriteS("MYSTERIOUS CONNECTION ERROR ")
+      WriteN(data) ]
+  WriteS(" -- ")
+  if connopenflg do abortconn(data)
+  writehex(openvec^1)	//target device ID of dead conn
+  WriteS(" CLOSED*C*L")
+  resultis T
+]
+
+//settimer first flushes any previous timer setting, and then sets
+//the timer for its maximum of 65535 millisec; setting of 0 flushes
+//any previous running timer, but not a signal from an expired timer
+and settimer() be [
+  STIME(opcodetimer,0)
+  acs^0 := opcodetimer
+  ELFCAL(emtTSTQS,acs,acs)
+  unless acs^0 = 0 do WAITS(opcodetimer)	//flush signal
+  STIME(opcodetimer,#177777)
+  return
+]
+

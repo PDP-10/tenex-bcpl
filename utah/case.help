@@ -1,0 +1,51 @@
+
+CASE is a program  designed  to  make  life  easier  for  folks  with
+upper-case  only  terminals.   It  is principally for BCPL users, but
+others may find it useful. CASE can be  invoked  in  two  ways:
+ CASE<space>filename
+	This converts the given file (default  extension  .BCE)  from
+'escape  format'  to  normal  bcpl  format,  and  then calls the BCPL
+compiler to compile that file. The file that is output has  the  same
+name as the input file, and an extension of .BCP.
+
+CASE<return>
+	This  enters  a  dialogue  with the user.  It asks for an IN:
+file.   Then it asks  for  an  escape  character,  (  a  <return>  in
+response  to this gets you the default escape character @ ).  Then it
+asks the question "Full Case Mode -> Escape Mode".  A response  of  Y
+to  this causes the input file to be translated from upper/lower case
+form to 'escape format', using the given escape character. A response
+of ! to the question causes the output file to be given the same name
+as the input file, with an extension  of  .BCP,  and  translates  the
+input  file  from escape format to normal form, then invokes the BCPL
+compiler.  Any  other response causes translation from escape form to
+normal form, but does not invoke the bcpl compiler.
+	Escape  Format:  Upper case alphabetics stand for their lower
+case equivalents unless they are preceeded by  the  escape  character
+(in  which  case  they stand for themselves), or they are in a "word"
+preceeded by 2 escape  characters  (in  which  case  they  stand  for
+themselves)  Further:  [ ! and ] stand for left-brace {, vertical-bar
+|, and right-brace, respectively.
+
+	Default escape character is @.
+	Restart the dialogue at any time by typing <ctrl>g.
+	EXAMPLE:
+// @EXAMPLE @@BCPL @PROGRAM IN @ESCAPE @FORMAT
+GET "<@@BCPL>HEAD"
+LET @START() BE
+{ 
+  @@OUTPUT_@CREATE@OUTPUT("@SUPER@FOONLY@DIED")
+  @WRITE@S("*N@I SAW '@SOMETHING @NASTY' IN THE @WOODSHED")
+  @@BOUT(@@OUTPUT,0) //@NULL @BYTE
+  @END@WRITE(@@OUTPUT)
+}
+	Translates to normal form as:
+// Example BCPL Program in Escape Format
+get "<BCPL>head"
+let Start() be
+{ 
+  OUTPUT_CreateOutput("SuperFoonlyDied")
+  WriteS("*nI saw 'Something Nasty' in the Woodshed")
+  BOUT(OUTPUT,0) //Null Byte
+  EndWrite(OUTPUT)
+}

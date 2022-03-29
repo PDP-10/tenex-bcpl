@@ -1,0 +1,122 @@
+
+
+
+
+
+     This file contains a description of the macros used  to  interfaace
+BCPL and MACRO routines.  Definitions of these macros can be loaded into
+a MACRO program by using a SEARCH BCPMAC statement.
+
+I.        DEFBCP(routinename) or
+          DEFBCP(routinename, arg) or
+          DEFBCP(routinename, <arg1,arg2,...,argn>)
+
+     This macro defines a BCPL-callable  routine  with  the  given  name
+(routinename), and declares it to be an ENTRY.  Each of the arguments is
+defined to be a stack reference, so that they can be referred to by name
+within  the  routine.   Each  DEFBCP  must  be matched by an ENDBCP (see
+below), and definitions cannot be nested.  Calling  this  macro  defines
+the macros and variables described below.
+
+II.       Variables
+R:  The AC used by BCPL to return a result (currently 1)
+S:  The AC used for the BCPL stack (currently 16)
+T:  The AC used for the stack cover (currently 17)
+L:  The AC used for routine linkage (currently 1)
+$$TOP:  The global variable which contains the  stack  limit  (which  is
+checked at the beginning of all subroutines currently)
+$$ERR:  The routine which is called if the stack overflows.
+
+III.      ENDBCP
+
+     Ends the BCPL-callable  routine  started  by  the  previous  DEFBCP
+macro.   Automatically  generates  a  return  to  the BCPL routine which
+called this MACRO routine.
+
+IV.       NARGS or
+          NARGS AC
+
+     Load the number of arguments to this routine into AC (or R  if  not
+specified).  Same as numbargs in BCPL.                     ________
+
+V.        LSIDE or
+          LSIDE AC
+
+     Load -1 (BCPL value true) if  called  from  the  left  side  of  an                         ____
+assignment  statement,  0 (BCPL value false) otherwise, into AC (or R if                                      _____
+not specified).  Same as leftside in BCPL.                         ________
+
+VI.       LOCAL(<name1,name2,...,namen>)
+
+     Define the names name1 through namen as  locations  on  the  stack.
+Same as the BCPL statement:
+let name1, name2, ..., namen := nil, nil, ..., nil___ ______ ______ ____ _____ __ ____ ____ ____ ___
+
+VII.      VECTOR(<<name1,length1>,<name2,length2>,...,<namen,lengthn>>)
+
+     Define a set of vectors with the given names  and  lengths  on  the
+stack.   Vectors  are  defined  as  in  BCPL,  a  pointer  to a block of
+
+                                                    Page   2
+
+
+
+(length+1) words.  Same as the BCPL statement:
+let name1, name2, ..., namen :=  vec  length1,  vec  length2,  ...,  vec___ ______ ______ ____ _____ __  ___  ________  ___  ________  ____  ___
+lengthn_______
+
+VIII.     CALBCP(routinename) or
+          CALBCP(routinename, arg) or
+          CALBCP(routinename, <arg1,arg2,...,argn>)
+
+     Call the specified routine with the given argument list  using  the
+BCPL calling sequence.
+
+IX.       RETURN
+
+     Return to the routine  which  called  this  one.   (Currently  this
+generates  a  JRST to the ENDBCP, since the return sequence is more than
+one instruction.)
+
+X.        RSLTIS value
+
+     Move value into R, then return.
+
+NOTE: Stack space should always be reserved by LOCAL  or  VECTOR  calls,_____
+since  an  internal  count  is  kept  for the stack cover and subroutine
+calls.   The  source  listing   of   all   of   these   macros   is   in
+<DEV-BCPLIB>BCPMAC.MAC.
+
+                                                    Page   3
+
+
+
+XI.       Example
+
+          TITLE     VECMUL
+          SEARCH    STENEX
+          SEARCH    BCPMAC
+DEFBCP(VECMUL, RESULT)        ;RESULT points to result location
+          VECTOR(<<X,20>,<Y,10>>)       ; get 2 vectors on the stack
+          CALBCP(GETVEC,<X,20>)         ;Same as GetVec(x,20)
+          JUMPE     R,OOPS    ;returned "false" -- error
+          CALBCP(GETVEC,<Y,10>)         ;Get values for 2nd vector
+          JUMPE     R,OOPS    ; error
+          SETZ      R,        ;result is "false" until done with loop
+          MOVE      2,@X      ;get # of entries in x-vector from 0th
+                              ;entry
+          CAME      2,@Y      ;must be same as # in y-vector
+          JRST      OOPS      ;error
+          SETZM     @RESULT   ;clear result
+          MOVE      3,X       ;get pointer to 1st vector, entry 0
+          MOVE      4,Y       ;and 2nd vector
+LOOP:     AOS       3         ;get next entry in X
+          AOS       4         ;and in Y
+          MOVE      6,@4      ;get the actual entry in Y
+          IMUL      6,@3      ;multiply by X entry
+          ADDM      6,@RESULT ;accumulate result
+          SOJG      2,LOOP    ;test for end of vector
+          SETO      R,        ;"true" to result register
+OOPS:     ENDBCP              ;end of routine, and return
+END
+

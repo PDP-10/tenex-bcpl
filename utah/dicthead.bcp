@@ -1,0 +1,17 @@
+
+// dicthead.b
+
+global
+ { NextDictEntry:8082
+   InitDict:8083
+   RestoreDict:8084
+   Enter:8085
+   Find:8086
+   Delete:8087
+   DictGetFree:8088
+   DictRetFree:8089
+   stringlength:8090
+   wrrd:8091
+   h:8092
+ }
+

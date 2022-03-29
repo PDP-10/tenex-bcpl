@@ -1,0 +1,333 @@
+// Check a list of directories for SYSOUT's with a given parent
+//
+
+get "<BCPL>HEAD.BCP"
+get "<BCPL>UTILHEAD.BCP"
+get "<BCPL>JSHEAD.BCP"
+get "<BCPL>STRINGHEAD.BCP"
+
+static   [ SmallestSysout: 70 ]   // smallest # of pp. considered
+manifest [ BufferSize: 100 ]
+
+manifest [ SixbitMAKSYS: #554153637163 ]	// MAKSYS in SIXBIT
+manifest [ SixbitSYSOUT: #637163576564 ]	// SYSOUT in SIXBIT
+static   [ SendMessage: false ]
+
+manifest [ MaxMakesys:  20 ]
+
+structure [ makesys^20  [ date	word
+			  name	[ nameword^25 word  ] ] ]
+static
+ [  Ujfn:	nil		// jfn of file with usernames
+    Cnt:	nil		// count of # of makesys's
+    User:	vec 25		// current users name
+    Dir:	vec 25		// current directory name
+    UserNumber: nil		// current user number
+    DirNumber:  nil		// current directory number
+
+    Msg:	vec BufferSize	// contains message
+    MsgLen:	nil
+    SendFl:	nil		// jfn of file with output msg
+				// or 0 if no message in progress
+    ListFile:	nil		// jfn for list of files if
+				// no messages are sent
+
+    SysAC:	vec 10
+    NextC:	-1		// holds the next char after name
+    asciiVec:   vec 40
+
+    Earliest:	nil		// date of earliest makesys being
+				// searched
+    Info:	vec size makesys // contains the makesys info
+ ]
+
+manifest [ colon:#72 ]
+manifest [ comma:#54 ]
+
+// if these bits are on in return from GTJFN, user
+// specified <*>*.ext;*.  Check everybody
+manifest [ Mask: #100000000000 ] 
+
+let Start() be
+[st
+  OUTPUT _ CreateOutput(0)
+  INPUT _ FindInput(0)
+
+//  get name of makesys and read in identifying information
+
+  Cnt _ 1
+
+   let WasComma _ nil
+   let MapJfn _ nil
+   let OldCnt _ nil
+
+   let E _  list   (#120100,,0),
+		   (INPUT,,OUTPUT),
+  		   0,
+  		   0,
+  		   0,
+		   POINT(7,'SAV',-1),
+		   0 repname 3
+   [
+    OldCnt _ Cnt
+    WriteS("Makesys: ") repeatwhile Jsys(jsGTJFN,(0,,E), 0) = 1
+    MapJfn _ SysAC!1
+    if (MapJfn & Mask) = Mask then	// <*>*.sav;*. 
+	[ Cnt _ -1; Jsys(jsRLJFN, MapJfn); break ]
+    Jsys(jsBKJFN,#100)
+    WasComma _ PBIN()=comma 
+    if WasComma then WriteS("*c*l");
+    Ujfn _ (0,,MapJfn)
+    GetMakesysInfo(Ujfn)
+       repeatuntil (Jsys(jsGNJFN, MapJfn) = 1)
+    if Cnt = OldCnt
+     then [ WriteS(" no makesys found*c*l"); WasComma _ true ]
+   ] repeatwhile WasComma
+    Cnt _ Cnt-1 
+
+//  get output 
+Ask:
+  WriteS("Send messages? ")
+  switchon PBIN() into
+    [ default:  WriteS(" ? *c*l"); goto Ask
+      case $Y: case $y: ListFile _ 0; WriteS("es*c*l")
+	[ Ujfn _ GetTextFile("initial message from file: ",0)
+	  MsgLen _ SIN(Ujfn, POINT(7, Msg), (BufferSize*5))
+	  EndRead(Ujfn);
+	  test MsgLen = BufferSize*5
+	   ifso WriteS("*c*l TOO LONG!*c*l")
+	   ifnot break
+	] repeat
+      endcase
+      case $N: case $n: WriteS("o*c*l")
+	ListFile _ GetTextFile("List sysouts on file: ",1)
+      endcase
+    ]
+
+  Ujfn _ GetTextFile("User names from file: ",0)
+
+//   main loop
+
+ [
+  WriteS(".")
+  ReadName(User)
+  test NextC = colon 
+   ifnot [ CheckDir(User) ]
+   ifso
+    [ [ ReadName(Dir); CheckDir(Dir) ] repeatwhile NextC = comma ]
+  EndUser()
+ ] repeat
+
+]st
+
+and GetMakesysInfo(Jfn) be
+ [get
+   unless OpenThawed(Jfn) do return
+   sfptr(Jfn,2)
+   unless (rhz(BIN(Jfn))=#140) & (BIN(Jfn) = SixbitMAKSYS) do
+		[ EndRead(Jfn, #400000)
+		  return ]
+   Info>>makesys^Cnt.date _ BIN(Jfn)
+   Jsys(jsJFNS, POINT(7,asciiVec,-1), Jfn, (#011110,,1))
+   IDPB(0, lv SysAC!1)
+   ASCIZToString(asciiVec, lv Info>>makesys^Cnt.name)
+   WriteS(lv Info>>makesys^Cnt.name)
+   WriteS("*c*l")
+   test Cnt=1
+    ifso [ Earliest _ Info>>makesys^Cnt.date ]
+    ifnot [ if Earliest > Info>>makesys^Cnt.date
+	    then Earliest _ Info>>makesys^Cnt.date ]
+   Cnt _ Cnt + 1
+   let LeftHalf _ #400000
+   if Cnt>MaxMakesys then
+     [ WriteS(" only "); WriteN(MaxMakesys);
+       WriteS(" makesys's can be handled*c*l")
+       LeftHalf _ 0 ]
+   EndRead(Jfn, LeftHalf)
+ ]get
+
+and ReadName(Str) be
+ [read
+   ReadWord(Ujfn, Str, lv NextC, true, ";, :*c*l*n") 
+   if Eqstr(Str,"") \ Eqstr(Str,"^Z")  then EndProgram()
+ ]read
+
+and Jsys(Call, A1, A2, A3, A4, A5) _ valof
+ [ for I _ 1 to 5 do SysAC!I _ (lv Call)!I
+   resultis JSYS(Call, SysAC, SysAC)
+ ]
+
+and GetTextFile(Prompt, Output) _ valof
+ [ 
+Retry:
+  WriteS(Prompt)
+  if Jsys(jsGTJFN,((Output=0=>#120003,#620003),,0),(INPUT,,OUTPUT))
+     = 1
+    then goto Retry
+
+  if OpenF(SysAC!1,(#070000,,(Output=0 => #200000, #100000)))=0 
+      then goto Retry
+  resultis SysAC!1
+ ]
+
+
+and WriteFileName(Jfn, TO) be
+ [ Jsys(jsJFNS, TO, Jfn, (#011110,,1)) ]
+
+and OpenF(Jfn, Mode) _ valof
+  [ if Jsys(jsOPENF, Jfn, Mode) = 1 then
+      [ let Msg _ SysAC!1
+	WriteS("*c*l can't open "); WriteFileName(Jfn, OUTPUT)
+	WriteS(" -- ");  ERSTR(Msg); WriteS("*c*l")
+	resultis false ]
+   resultis true
+ ]
+
+and OpenThawed(Jfn) _ OpenF(Jfn, (#440000,, #202000))
+
+and CheckDir(Dir) be
+ [ StringToASCIZ(Dir, asciiVec)
+   let ptr _ POINT(7, asciiVec)
+   DirNumber _ 0
+   if Jsys(jsSTDIR, (#400000,,0), ptr) = 3
+     then [ DirNumber _ (0,,SysAC!1)
+	    Jsys(jsDIRST, ptr, DirNumber)
+          ]
+   // this translates from uppercase to lower, and allows
+   // alts in user name
+
+   let E _  list   (#100120,,-3),
+		   (#377777,,#377777),
+  		   0,
+		   ptr,
+		   POINT(7,'**',-1),
+		   POINT(7,'**',-1),
+		   0 repname 3
+
+    if Jsys(jsGTJFN, (0,,E), 0) = 1
+     then [ WriteS(Dir); WriteS("  -- ");
+	    ERSTR(SysAC!1)
+	    WriteS("*c*l")
+	    return
+	  ]
+    let MapJFN _ SysAC!1
+    let Jfn _ (0,,MapJFN)
+    CheckFile(Jfn) repeatuntil (Jsys(jsGNJFN, MapJFN) = 1)
+ ]
+
+and CheckFile(Jfn) be
+ [check
+    let FDB _ vec #25
+    Jsys(jsGTFDB, Jfn, (#25,,0), FDB)
+    if rhz FDB!#11 < SmallestSysout then return
+    // number of pages big enough
+
+    if Cnt>0 & FDB!#14 < Earliest then return
+    // written before MakesysDate
+
+    unless OpenThawed(Jfn) do return
+
+    let WasSysout _ 0
+    let Sysnamebuf _ vec 20
+    let SysoutDate _ nil
+    sfptr(Jfn, 3)
+    if BIN(Jfn) = SixbitSYSOUT then
+      [ SysoutDate _  BIN(Jfn)
+	test Cnt > 0
+	 ifso for I _ 1 to Cnt do
+	  [ if SysoutDate = Info>>makesys^I.date then
+	     [ WasSysout _ I
+	       break ]
+	  ]
+	 ifnot WasSysout _ 1
+      ]
+     test WasSysout=0
+	ifso [	EndRead(Jfn, #400000); return ]
+	ifnot[	Jsys(jsSIN, Jfn, POINT(36,Sysnamebuf), 19, 0)
+		EndRead(Jfn, #400000)	// close but do not release
+	     ]
+
+ // 	OK, send the message
+
+     let BufSysout _ vec 25
+     ASCIZToString(POINT(7,Sysnamebuf), BufSysout)
+
+ //	if sending messages, do not include file if
+ // 	makesys name is different
+
+     let MsgTo _ nil
+     test Cnt>0
+	& ~ Eqstr(BufSysout,lv Info>>makesys^WasSysout.name)
+	& ListFile = 0
+      ifso  MsgTo _ OUTPUT
+      ifnot [ StartUser(); MsgTo _ SendFl ]
+     WriteFileName(Jfn, MsgTo)
+     let Author _ lhz FDB!6
+     if Author ne 0 & Author ne UserNumber & Author ne DirNumber
+	then [ WriteS(MsgTo, " (created by ")
+	       Jsys(jsDIRST, MsgTo, Author)
+	       WriteS(MsgTo, ")")
+	     ]
+     WriteS(MsgTo, " sysout on ")
+     WriteS(MsgTo, BufSysout)
+     WriteS(MsgTo, "*c*l")
+
+ ]check
+
+and StartUser() be
+[  StringToASCIZ(User, asciiVec)
+   let ptr _ POINT(7, asciiVec)
+   UserNumber _ 0
+   if Jsys(jsSTDIR, 1, ptr) = 3
+     then [ UserNumber _ (0,,SysAC!1)
+	    Jsys(jsDIRST, ptr, UserNumber)
+          ]
+if SendFl ne 0 then return
+   if ListFile ne 0 		// i.e. not sending any messages
+    then [ WriteS(ListFile, User)
+	   WriteS(ListFile, ":*c*l")
+	   SendFl _ ListFile; return
+	 ]
+
+   append("[--UNSENT-MAIL--].",User,asciiVec)
+   let tmp _ 0
+   unless findsubstr(User,"*a",tmp,tmp,0)
+    do append(asciiVec,"^V*a;",asciiVec)
+
+Retry:
+   SendFl _ CreateOutput(asciiVec, 7)
+
+   test SendFl = 0 
+     ifso [ WriteS("*c*l Message WOULD be:  *c*l")
+	    SendFl _ OUTPUT ]
+     ifnot [ WriteS(User); WriteS(" sent a message*c*l") ]
+
+   WriteS(SendFl, "Date: ")
+   Jsys(jsODTIM, SendFl, -1, (#012260,,0))
+   WriteS(SendFl, "*c*l")
+   WriteS(SendFl, "From: ")
+  // get name of person running program
+   Jsys(jsGJINF)
+   Jsys(jsDIRST, SendFl, SysAC!1)
+   WriteS(SendFl, "*c*lSubject: Sysout files*c*l")
+   WriteS(SendFl, "To:  ");  WriteS(SendFl, User)
+   WriteS(SendFl, "*c*l*c*l")
+   SOUT(SendFl, POINT(7,Msg), MsgLen) 
+   WriteS(SendFl, "*c*l----------------------*c*l*c*l")
+]
+
+and EndUser() be
+[  if SendFl = 0 then return
+   WriteS(SendFl, "*c*l-------*c*l")
+   if ListFile = 0 then EndWrite(SendFl)
+   SendFl _ 0
+]
+
+and EndProgram() be
+[  EndUser()
+   EndRead(Ujfn)
+   if ListFile ne 0 then EndWrite(ListFile)
+   WriteS("*c*lEnd of Execution*c*l")
+   [ finish ] repeat
+]
+   

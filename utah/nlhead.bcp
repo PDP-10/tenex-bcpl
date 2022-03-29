@@ -1,0 +1,25 @@
+external
+ { DOICP
+   LBINIT
+   NTGJFN
+   NTOPNF
+ }
+global
+ { CreateNetDialogue:8134
+   CreateNetOutput:8122
+   FindNetInput:8123
+   LocalSocket:8124
+   NetStatus:8125
+   EndNetDialogue:8126
+   InitNetLibrary:8127
+ }
+global
+ { NETLOCALSOCKET:8128
+   NETINOPENF2:8129
+   NETOUTOPENF2:8130
+   NETWAITTIME:8131
+   NETPOLLTIME:8132
+   NETWAITFLAG:8133
+ }
+manifest{ LISTENING := -1}
+

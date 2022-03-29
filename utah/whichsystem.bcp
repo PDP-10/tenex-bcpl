@@ -1,0 +1,13 @@
+manifest
+{ sysTOPS10 :=     1
+  sysITS :=        2
+  sysTENEX :=      3
+  sysTOPS20 :=     4
+  sysThisSystem := sysTOPS20
+  sysIsTOPS10 :=   sysThisSystem=sysTOPS10
+  sysIsITS :=      sysThisSystem=sysITS
+  sysIsTENEX :=    sysThisSystem=sysTENEX
+  sysIsTOPS20 :=   sysThisSystem=sysTOPS20
+ }
+
+external { IS10X }

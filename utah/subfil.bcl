@@ -1,0 +1,558 @@
+GET "BCL:BCPLIB"
+
+GET "BCL:IOPACK"
+
+GET "BCL:ERRORS"
+
+GET "BCL:BITS"
+
+GET "BCL:RFS"
+
+$VERSION #000302000013
+
+MANIFEST
+$(
+    LH: BYTE 18:18
+    RH: BYTE 18:0
+$)
+
+MANIFEST
+$(
+    HEADER.SIZE: 30
+    TRAIL1: 	 '*C*L*L*L*L'<<1
+    TRAIL2: 	 '\\\\\'<<1
+    TRAIL3: 	 '*C*L*P*L*L'<<1
+    TRAIL4:	 '*C*L*P*C*C'<<1
+    OLDENDHEAD:  '*C*L*L*L*L'<<1
+    SPACES: 	 '*S*S*S*S*S'<<1
+    ENDHEAD: 	 '*S*S*S*C*L'<<1
+$)
+
+STATIC
+$(
+    DIR: 	NIL
+    CHECK: 	NIL
+    DELALL: 	NIL
+    DEL: 	NIL
+    CHATTY: 	NIL
+    ONELINE: 	NIL
+    TTYCH: 	'*L'
+    CONTRACTED: NIL
+    DEBUG: 	FALSE
+    SUBFILING:  NIL
+    PROTECTION: NIL
+$)
+
+STATIC
+$(
+    OUTPUTSPEC: TABLE 0,$SIXBIT "DSK",0,0,B1,0,0,0
+    INPUTSPEC:  TABLE 0,$SIXBIT "DSK",0,0,B1,0,0,0
+    DSKSPEC: 	TABLE 0,$SIXBIT "DSK",0,0,B1,0,0,0
+    DEFLTSPEC:  TABLE 0,$SIXBIT "DSK",0,0,B1,0,0,0
+$)
+
+STATIC
+$(
+    FILE:   NIL
+    EXT:    NIL
+    TIME:   NIL
+    DATE:   NIL
+    PROT:   NIL
+    LENGTH: NIL
+$)
+
+STATIC
+$(
+    MASTER: NIL
+    ACTION: NIL
+    MONTH:  TABLE $SIXBIT "JAN",$SIXBIT "FEB",$SIXBIT "MAR",$SIXBIT "APR",$SIXBIT "MAY",$SIXBIT "JUN",
+		  $SIXBIT "JUL",$SIXBIT "AUG",$SIXBIT "SEP",$SIXBIT "OCT",$SIXBIT "NOV",$SIXBIT "DEC"
+$)
+
+EXTERNAL
+$(  HEADER
+    OPENHEADER
+    HEADBP
+    EXPAND
+$)
+
+LET RD10H() = VALOF
+$(  LET N = 0
+    LET C = NIL
+
+    C := RDH()  REPEATUNTIL '0' <= C <= '9'
+    WHILE '0' <= C <= '9'
+    $(  N := N*10 + C - '0'
+	C := RDH()
+    $)
+
+    RESULTIS N
+$)
+
+AND RD8H() = VALOF
+$(  LET N = 0
+    LET C = NIL
+
+    C := RDH()  REPEATUNTIL '0' <= C <= '7'
+    WHILE '0' <= C <= '7'
+    $(  N := N*8 + C - '0'
+	C := RDH()
+    $)
+
+    RESULTIS N
+$)
+
+AND WORD6H() = VALOF
+$(  LET W = 0
+    LET C = NIL
+
+    $(  C := RDH()
+	IF C = '@'  RESULTIS 0
+    $)  REPEATUNTIL ALPHANUM(C)
+
+    WHILE ALPHANUM(C)
+    $(  W := (W<<6) + VALOF $[ $MOVE 1,C; $CAIL 1,#140; $SUBI 1,#40; $ADDI 1,#40; $ANDI 1,#77 $]
+	C := RDH()
+    $)
+
+    UNTIL (BYTE 6:30) && W  W <<:= 6
+    RESULTIS W
+$)
+
+AND RDH() = VALOF
+$(  LET R = NIL
+
+    READCH(HEADER,@R)
+    RESULTIS R
+$)
+
+AND ALPHANUM(C) = 'A' <= C <= 'Z' \/ 'a' <= C <= 'z' \/ '0' <= C <= '9'
+
+AND RFSSWITCH() BE
+$(  RFSCH()
+    SWITCHON FSCH INTO
+    $(  CASE 'c':
+	CASE 'C':
+	     CHATTY := TRUE
+	     ENDCASE
+
+	CASE 'P':
+	CASE 'p':
+	     PROTECTION := RFSOCT()
+	     ENDCASE
+
+	CASE 'd':
+	CASE 'D':
+	     DEL := TRUE
+	     ENDCASE
+
+	CASE 'l':
+	CASE 'L':
+	     DIR := TRUE
+	     ACTION := EXPAND
+	     ENDCASE
+
+	CASE 'z':
+	CASE 'Z':
+	     DELALL := TRUE
+	     ENDCASE
+
+	CASE '?':
+	     DEBUG := \DEBUG
+	     ENDCASE
+
+	CASE 'n':
+	CASE 'N':
+	     CHECK := FALSE
+	     ENDCASE
+
+	CASE 'H':
+	CASE 'h':
+	     $[
+		$OUTSTR	$AZ "Commands are:*C*LFILE.MAS	to expand masterfile*C*L"
+		$OUTSTR $AZ "FILE.SUB	to create masterfile from files specified in FILE.SUB*C*L"
+		$OUTSTR $AZ "/L		list .MAS file directory*C*L*LFor more help see SYS:SUBFIL.HLP*C*L"
+	     $]
+	     ENDCASE
+
+	DEFAULT:
+	     WRITE(TTY,"*C*LNo such switch /:C*C*L",FSCH)
+    $)
+
+    RFSCH()
+$)
+
+LET CLOSELV(STREAM) BE
+$(  LET S = !STREAM
+
+    IF S = 0  RETURN
+    IF SC.FLAGS^S < 0  IF DEBUG  WRITE(TTY,"[:6:::6.:6]",SC.DEV^S,SC.FILENAME^S,SC.EXT^S<<18)
+    CLOSE(S)
+    !STREAM := 0
+$)
+
+LET CHECKHEADER(V) BE
+$(  MANIFEST
+    $(
+	SUBFIL:   'SUBFIL'<<1
+	PERCENTS: '%%%%%'<<1
+    $)
+
+    TEST !V = SUBFIL THEN SUBFILING := TRUE
+    OR
+    TEST !V = PERCENTS THEN SUBFILING := FALSE
+    OR
+    $(  WRITE(TTY,(!V = PERCENTS+1 -> "*C*LUse SYS::SUBOLD instead*C*L", "*C*LMaster file snag: [:8]*C*L"),!V)
+	FINISH
+    $)
+
+    IF SUBFILING
+      UNTIL RDH() = ':'
+      $(
+      $)
+$)
+
+LET TOMASTER(NAME,EXT,TIME,DATE,PROT,WORDS) BE
+$(      LET V = VEC HEADER.SIZE
+
+	OPENHEADER(V)
+	WRITE(HEADER,(SUBFILING -> "SUBFILE: :6.:6 @:N:::N ", "%%%%%:Z  .  :Z @:N:::N "),NAME,EXT,TIME/60,TIME REM 60)
+	WRITEDATE(HEADER,DATE)
+	WRITE(HEADER," <:O3> (:N)",PROT,WORDS)
+	FOR W = V TO RH&&HEADBP DO WRITECH(MASTER,!W)
+	WRITECH(MASTER,(SUBFILING -> ENDHEAD, OLDENDHEAD))
+	SC.ERROR^INPUT := LABEL(EOF)
+	$(  LET W = NIL
+
+	    READCH(INPUT,@W)
+	    UNLESS W = 0  WRITECH(MASTER,W)
+	$)  REPEAT
+
+    EOF: UNLESS ERR = ERR.EOF  IOMESSAGE()
+	 WRITECH(MASTER,TRAIL1)
+	 WRITECH(MASTER,TRAIL2)
+	 WRITECH(MASTER,TRAIL4)
+	 CLOSELV(@INPUT)
+$)
+
+LET MASTERHEADER() BE
+$(  LET V = VEC HEADER.SIZE
+    LET D,M,Y = NIL,NIL,NIL
+
+    OPENHEADER(V)
+    FOR W = V TO V+HEADER.SIZE DO
+    $(  READCH(MASTER,W)
+	IF !W = ENDHEAD \/ !W = OLDENDHEAD  BREAK
+    $)
+
+    CHECKHEADER(V)
+    FILE := WORD6H()
+    EXT := WORD6H()
+    TIME := RD10H() * 60 + RD10H()
+    D := RD10H()
+    M := WORD6H()
+    Y := RD10H()
+    FOR I = 0 TO 11 DO
+      IF M = MONTH!I
+      $(  M := I
+	  BREAK
+      $)
+
+    DATE := ((Y-1964) * 12 + M) * 31 + D - 1
+    PROT := RD8H()
+    LENGTH := RD10H()
+$)
+
+LET MASTERFILE() BE
+  $(  LET W = NIL
+
+      READCH(MASTER,@W)
+      IF W = TRAIL1
+      $(  READCH(MASTER,@W)
+	  TEST W = TRAIL2 THEN
+	  $(  READCH(MASTER,@W)
+	      TEST W = TRAIL3 \/ W = TRAIL4 THEN
+	      $(  CLOSELV(@OUTPUT)
+		  RETURN
+	      $)
+	      OR
+	      $(  WRITECH(OUTPUT,TRAIL1)
+		  WRITECH(OUTPUT,TRAIL2)
+	      $)
+	  $)
+	  OR WRITECH(OUTPUT,TRAIL1)
+      $)
+
+      WRITECH(OUTPUT,W)
+  $)  REPEAT
+
+LET FILEDATE(S) = (SC.HIDATE^S<<12) + SC.CREATEDATE^S
+
+LET CONSOLEFS(FS) BE
+  $(  IF TTYCH = '*L' \/ TTYCH = ''  UNLESS ONELINE  IF CONSOLE = TTY  WRITES(TTY,"*C*L**")
+      IF READFS(CONSOLE,FS)
+      $(  IF FSCH = ';'  RFSCH()  REPEATUNTIL FSCH = '*L' \/ FSCH = '*E'
+	  IF CONSOLE = TTY  TTYCH := FSCH
+	  RETURN
+      $)
+
+      WRITES(TTY,"ERROR IN FILESPEC - ")
+      $(  WRITECH(TTY,FSCH)
+	  IF FSCH = '*L' \/ FSCH = ''  BREAK
+	  RFSCH()
+      $)  REPEAT
+  $)  REPEAT
+
+STATIC
+$(
+    HEADER: TABLE (6<<12) + 1,0,0,0,0,0,0
+    HEADBP: 0
+$)
+
+LET WRHEAD(S,C) BE $[ $MOVE 1,C; $IDPB 1,HEADBP $]
+
+LET RDHEAD(S,L) BE $[ $ILDB 1,HEADBP; $MOVEM 1,@L $]
+
+LET OPENHEADER(V) BE
+$(  HEADBP := SELECTOR 7:0:V-1
+    SC.READER^HEADER,SC.WRITER^HEADER := RDHEAD,WRHEAD
+    FOR I = 0 TO HEADER.SIZE DO V!I := SPACES
+$)
+
+STATIC
+$(
+    NULL:  TABLE (6<<12) + 1,0,0,0,0,0
+    NULLC: NIL
+$)
+
+LET OPENNULL() = VALOF
+$(  LET WRNULL(S,C) BE NULLC +:= 1
+
+    LET CLNULL() = NULLC
+
+    SC.WRITER^NULL,SC.CLOSER^NULL := WRNULL,CLNULL
+    NULLC := 0
+    RESULTIS NULL
+$)
+
+LET DELETE() BE
+$(  CONTRACT(FALSE)
+    IF CHECK & \CONTRACTED  RETURN
+    CONTRACT(TRUE)
+$)
+
+AND CONTRACT(DELETE) BE
+$(      LET FS = VEC FS.SIZE
+
+	CONTRACTED := TRUE
+	DEFAULTFS(INPUTSPEC,"DSK",0,0,0)
+	IF NUMBARGS() = 0  DELETE := FALSE
+	MASTER := 0
+	CONSOLE := 0
+	IF FS.FILE^OUTPUTSPEC = 0  FS.FILE^OUTPUTSPEC := FS.FILE^INPUTSPEC
+	IF FS.EXT^OUTPUTSPEC = 0  FS.EXT^OUTPUTSPEC := $SIXBIT "MAS"
+	CONSOLE := FIND(INPUTSPEC,LABEL(NO),1,1)
+	UNLESS DELETE
+	  MASTER := CREATE(OUTPUTSPEC,LABEL(NO),#14,4,PROTECTION,VALOF $[ $MSTIME 1,0; $IDIVI 1,60000 $],
+			   VALOF $[ $DATE 1,0 $])
+	WRITES(TTY,(DELETE -> "*C*LDELETED FILES", "*C*LCREATING*C*L"))
+	$(      CONSOLEFS(FS)
+		IF FSCH = '-'
+		$(  IF FS.COLON^FS  FS.DEV^DEFLTSPEC := FS.DEV^FS
+		    IF FS.DOT^FS  FS.EXT^DEFLTSPEC := FS.EXT^FS
+		$)
+
+		IF FS.FILE^FS = 0  LOOP
+		DEFAULTFS(FS,DEFLTSPEC)
+		INPUT := FIND(FS,LABEL(NOINPUT),(DELETE -> #17, #14),4)
+		TEST DELETE THEN
+		$(      SC.ERROR^INPUT := LABEL(REN)
+			WRITE(TTY,"*C*L:F (:N)",FS,(WORDS(INPUT) + 127) / 128)
+			RENAME(INPUT,0,0,0,0,0,0,0,0)
+			CLOSELV(@INPUT)
+			LOOP
+
+		    REN: WRITES(TTY," [Not deleted]")
+			 CLOSELV(@INPUT)
+			 LOOP
+		$)
+		OR TOMASTER(FS.FILE^FS,FS.EXT^FS,SC.TIME^INPUT,FILEDATE(INPUT),SC.PROTECTION^INPUT,WORDS(INPUT))
+
+		LOOP
+
+	    NOINPUT:
+		 WRITE(TTY,"*C*L")
+		 IOMESSAGE()
+		 CONTRACTED := FALSE
+	$)  REPEATUNTIL FSCH = '*E'
+
+	ERR := 0
+	IF CHECK & \CONTRACTED & \DELETE
+	$(  EXTERNAL "%" $( BATCH $)
+
+	    LET C = NIL
+
+	    $[ $TTCALL 5,1; $JFCL $]
+	    TEST BATCH THEN
+	    $(  WRITES(TTY,"*C*LMaster file incomplete ")
+		C := 'N'
+	    $)
+	    OR
+	    $(  WRITES(TTY,"*C*LC to create the incomplete master file")
+		IF DEL  WRITES(TTY,", D to perform deletions, B both")
+		WRITES(TTY,": ")
+		C := VALOF $[ $TTCALL 11,1; $TTCALL 0,1; $IORI 1,#40 $]
+	    $)
+
+	    IF C \= 'b' & C \= 'c'
+	    $(  $[ $RESET $]
+		WRITES(TTY,"[Abandoned]")
+	    $)
+
+	    IF C = 'b' \/ C = 'd'  CONTRACTED := TRUE
+	$)
+
+    NO:  CLOSELV(@MASTER)
+	 CLOSELV(@CONSOLE)
+	 IF ERR
+	 $(  WRITES(TTY,"*C*L")
+	     IOMESSAGE()
+	     CONTRACTED := FALSE
+	 $)
+$)
+
+LET EXPAND() BE
+$(      LET EXTRACT,EXTN = FS.FILE^OUTPUTSPEC,FS.EXT^OUTPUTSPEC
+
+	DEFAULTFS(INPUTSPEC,"DSK",0,"MAS",0)
+	TEST EXTRACT THEN COPYFS(OUTPUTSPEC,DEFLTSPEC) OR DEFAULTFS(DEFLTSPEC,DSKSPEC)
+	MASTER := FIND(INPUTSPEC,LABEL(NO),#14,4)
+	WRITES(TTY,(DIR -> "*C*LDIRECTORY", EXTRACT -> "*C*LEXTRACTING", "*C*LEXPLODING"))
+	SC.ERROR^MASTER := LABEL(EOF)
+	$(  LET QUIT = FALSE
+
+	    MASTERHEADER()
+	    IF FILE = EXTRACT & EXT = EXTN  QUIT := TRUE
+	    TEST QUIT \/ EXTRACT = 0 THEN
+	    $(  OPENOUTPUT()
+		IF QUIT  UNLESS DIR  WRITES(TTY,"-OK")
+	    $)
+	    OR OUTPUT := OPENNULL()
+
+	    MASTERFILE()
+	    IF QUIT
+	    $(  ERR := ERR.EOF
+		BREAK
+	    $)
+	$)  REPEAT
+
+    EOF: UNLESS ERR = ERR.EOF  IOMESSAGE()
+	 CLOSELV(@MASTER)
+	 RETURN
+
+    NO:  IOMESSAGE()
+$)
+
+AND OPENOUTPUT() BE
+$(      FS.FILE^DEFLTSPEC,FS.EXT^DEFLTSPEC,FS.DOT^DEFLTSPEC := FILE,EXT,1
+	UNLESS FS.PPN^DEFLTSPEC DO FS.PPN^DEFLTSPEC:=VALOF $[ $GETPPN 1,0 $]
+	IF CHATTY \/ DIR
+	$(  WRITE(TTY,"*C*L:F :N:::N ",DEFLTSPEC,TIME/60,TIME REM 60)
+	    WRITEDATE(TTY,DATE)
+	    WRITE(TTY," <:O3> (:N)",PROT,LENGTH)
+	$)
+
+	IF CHECK
+	$(  OUTPUT := FIND(DEFLTSPEC,LABEL(OK),#17)
+	    WRITE(TTY,(CHATTY \/ DIR -> "[Exists]", "*C*L:F [Exists]"),DEFLTSPEC)
+	    UNLESS DIR
+	    $(  WRITE(TTY," creating :6.NEW*C*L",FILE)
+		FS.EXT^DEFLTSPEC := $SIXBIT "NEW"
+	    $)
+
+	    CLOSELV(@OUTPUT)
+	$)
+
+    OK:  OUTPUT := DIR -> OPENNULL(), CREATE(DEFLTSPEC,LABEL(NO),#14,4,PROT,TIME,DATE)
+	 RETURN
+
+    NO:  IOMESSAGE()
+	 OUTPUT := OPENNULL()
+$)
+
+AND WRITEF(S,FS) BE WRITE(S,":6:::6.:6:@",FS.DEV^FS,FS.FILE^FS,FS.EXT^FS,(PP -> "[:8,:8]", ":G:G"),LH&&PP,RH&&PP)
+WHERE PP = FS.PPN^FS
+
+AND WRITEZ(S,WD) BE FOR I = 30 TO 0 BY -6 DO WRITECH(S,(BYTE 6:I) && WD + #40)
+
+LET START() BE
+$(  LET V = VEC FS.SIZE
+    LET IOV = VEC 3000
+
+    ONELINE := RESCAN() = '-'
+    INITIALISEIO(IOV,3000)
+    CONSOLE := TTY
+    UNLESS ONELINE  WRITES(TTY,"*C*L/H for help")
+    $(CYCLE
+	LET COMMAND = FALSE
+
+	ACTION := 0
+	CONSOLE := TTY
+	DIR,CHECK,DELALL,DEL,CHATTY := FALSE,TRUE,FALSE,FALSE,FALSE
+	PROTECTION := 0
+	$(  CONSOLEFS(V)
+	    SWITCHON TTYCH INTO
+	    $(  CASE '-':
+		     COPYFS(V,DEFLTSPEC)
+		     LOOP
+
+		CASE '=':
+		CASE '_':
+		     COPYFS(V,OUTPUTSPEC)
+		     LOOP
+
+		CASE '*L':
+		CASE '':
+		CASE ',':
+		     COMMAND := TRUE
+		     LOOP
+	    $)
+	$)  REPEATUNTIL COMMAND
+
+	COPYFS(V,INPUTSPEC)
+	UNLESS FS.FILE^V  TEST TTYCH = '' THEN FINISH OR LOOP
+	SUBFILING := TRUE
+	UNLESS ACTION
+	  SWITCHON FS.EXT^V INTO
+	  $(  CASE $SIXBIT "MAS":
+		   ACTION := EXPAND
+		   ENDCASE
+
+	      CASE $SIXBIT "CMD":
+		   SUBFILING := FALSE
+
+	      CASE $SIXBIT "SUB":
+		   TEST DELALL THEN ACTION := DELALL
+		   WHERE DELALL() = CONTRACT(TRUE)
+		    OR TEST DEL THEN ACTION := DELETE OR ACTION := CONTRACT
+		   ENDCASE
+
+	      DEFAULT:
+
+	  $)
+
+	UNLESS ACTION
+	$(  WRITES(TTY,"*C*LNO ACTION SPECIFIED")
+	    LOOP
+	$)
+
+	IF DEBUG  WRITE(TTY,"O=:F, I=:F, D=:F",OUTPUTSPEC,INPUTSPEC,DEFLTSPEC)
+	ACTION()
+	IF DEBUG  WRITE(TTY,"O=:F, I=:F, D=:F",OUTPUTSPEC,INPUTSPEC,DEFLTSPEC)
+	COPYFS(DSKSPEC,DEFLTSPEC)
+	COPYFS(DSKSPEC,OUTPUTSPEC)
+	COPYFS(DSKSPEC,INPUTSPEC)
+    $)CYCLE  REPEATUNTIL ONELINE & TTYCH \= ','
+$)
+
+                                                                                                                                                                                                                                                                         

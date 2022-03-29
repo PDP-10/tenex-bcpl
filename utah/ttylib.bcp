@@ -1,0 +1,676 @@
+/* *** if you need gloabls, this list is complete
+global{
+       TTYtype:    // also has a static declr
+       Abort:
+       GetTtyType:
+       screenPosition:
+       flashField:
+       unflashField:
+       clearScreen:
+       notranslate:
+       openConsole:
+       display:
+       NewLine:
+       WriteO:
+       WriteFL:
+       ReadF:
+       readLine:
+       }
+*** */
+
+/* 
+*    just issue the first call to openConsole, and all else is setup
+* static varbl: TTYtype
+* unflashField(x,y,siz,ptr) 
+* flashField(x,y,siz) 
+* GetTtyType()
+* wrch(ch)
+* screenPosition(row,col)
+* clearScreen()
+* notranslate()
+* openConsole() .. calls getttype, notranslate
+* display(row,col,strng)
+* NewLine(jfn) be
+* WriteO(jfn,num) be		
+* WriteFL(jfn,f1) be
+* ReadF(jfn) := valof
+* Abort(strn) be
+*
+* readLine(vbuff,qline,qcol,dtype,dsize,sizedesc,hlptxt) be
+ *    This is the major tty interface.  The above params to the
+ *    routine are;
+ *    vbuff:      buffer to return the input
+ *    qline:      display line (y)
+ *    qcol:       and column (x)
+ *    dtype:      expected data type on input (char,string,number=integer)
+ *                f=float, i=integer, s=ssan, default=string/char
+ *    dsize:      either max, or abs size of input as described by:
+ *    sizedesc:   this descriptor
+ *    hlptxt:     help string
+ *
+*/
+
+static {
+ TTYtype := 0
+	}
+
+manifest {
+  escape:=#33				//  parity+#33
+  space:=#40				//  parity+#40
+  sqrbrkt:=$[
+  }
+
+
+let Abort(strn) be
+{
+ PBOUT(#7)
+ WriteS("*c*l..aborting..  [")
+ WriteS(strn)
+ WriteS("]*c*l")
+}
+
+ 
+let GetTtyType() be
+{
+ let tname := 1
+ let tnum := 2
+
+ let ttytable := list 5,( ( list 2,vec 10,0 ) repname 5 )
+ 
+ ttytable|1|tname := "ask"
+ ttytable|2|tname := "t10"
+ ttytable|3|tname := "aaa"
+ ttytable|4|tname := "visual200"
+ ttytable|5|tname := "FreeToUse"
+
+ ttytable|1|tnum := 1
+ ttytable|2|tnum := 2
+ ttytable|3|tnum := 3
+ ttytable|4|tnum := 4
+ ttytable|5|tnum := 5
+
+
+ let garbage := vec 10
+ let i:= 0
+ let crt := 0 
+ until crt gt 1 do
+    {
+    WriteS(" enter terminal type  ( aaa, t10, visual200 ): ")
+    i := ReadWord(INPUT,garbage)
+    WriteS(garbage)
+    for ix := 1 to 5 do
+       {
+       if Eqstr(garbage,ttytable|ix|tname) then
+          {  crt := ttytable|ix|tnum ; break }
+       }
+    }
+ TTYtype := crt
+ return
+ }
+
+let wrch(ch) :=  BOUT(OUTPUT,ch)
+
+let screenPosition(x,y) be
+{
+ // x = row, y=col .. i know its backass
+ let crt := TTYtype
+ switchon crt into
+   {
+    case 2:				// t10
+       {
+       wrch(escape)
+       wrch($Y)
+       wrch(space + x)			// #40 + ...
+       wrch(space + y)
+       endcase
+       }
+    case 3:				// aaa
+       {
+       wrch(escape)
+       wrch(sqrbrkt)
+       if x gt 9 do
+          {
+	  wrch(48+ (x/10) )
+	  }
+       wrch(48 +(x rem 10))
+       wrch($;)
+       if y gt 9 do
+          {
+	  wrch(48+ (y/10) )
+	  }
+       wrch(48 +(y rem 10))
+       wrch($H)
+       endcase
+       }
+    case 4:				// visual200
+       {
+       wrch(escape)
+       wrch($Y)  // "Y"
+       wrch(space + x)			// #40 + ...
+       wrch(space + y)
+       endcase
+       }
+    }
+
+ }
+
+
+let flashField(x,y,siz) be
+{
+ //TableLook(80)
+
+ let crt := TTYtype
+ switchon crt into
+   {
+    case 2:				// t10
+       {
+       screenPosition(x,y-1)
+       wrch(escape)
+       wrch($R)
+          //  wrch($H)				// underline
+       wrch($D)				// inverse
+       for i := 1 to siz+1 do
+          { wrch(#40) }			// space
+       wrch(escape)
+       wrch($R)
+       wrch(#100)			// @
+       endcase
+       }
+    case 3:				// aaa
+       {
+       screenPosition(x,y-1)
+       wrch(#40)
+//      wrch($[)
+       for i := 1 to siz do
+          { wrch($_) }			// space
+       screenPosition(x,y+siz)
+       wrch($|)
+       endcase
+       }
+    case 4:				// visual200
+       {
+       screenPosition(x,y-1)
+  //     wrch($[)
+       wrch(#40)
+       for i := 1 to siz do
+          { wrch($_) }			// space
+       screenPosition(x,y+siz)
+//       wrch($])
+       endcase
+       }
+    }
+
+
+ return
+ }
+
+let unflashField(x,y,siz,ptr) be
+{
+ //TableLook(81)
+
+ if NumbArgs() eq 4 do
+    {
+    screenPosition(x,y+ptr)
+    for i := 1 to siz - ptr do
+       {
+       wrch(#40)
+       }
+    }
+
+ let crt := TTYtype
+ switchon crt into
+   {
+    case 2:				// t10
+       {
+       screenPosition(x,y-1)
+       wrch(escape)
+       wrch($R)
+       wrch(#100)
+       endcase
+       }
+    case 3:				// aaa
+       {
+       screenPosition(x,y-1)
+       wrch(#40)
+       screenPosition(x,y+siz)
+       wrch(#40)
+       endcase
+       }
+    case 4:				// visual200
+       {
+       screenPosition(x,y-1)
+       wrch(#40)
+       screenPosition(x,y+siz)
+       wrch(#40)
+       endcase
+       }
+    }
+
+ return
+ }
+
+let clearScreen() be			//  for the telebag
+{
+ let crt := TTYtype
+ switchon crt into
+   {
+    case 2:				// t10
+       {
+       wrch(escape) 
+       wrch($H)				// home
+       wrch(escape)
+       wrch($J)
+       Wait(500)				// give .5sec to recover screen
+       endcase
+       }
+    case 3:				// aaa
+       {
+       wrch(escape) 
+       wrch(sqrbrkt)			// home
+       wrch($2)				// hex 32   erase all of display
+       wrch($J)
+       Wait(500)				// give .5sec to recover screen
+       endcase
+       }
+    case 4:				// visual200
+       {
+       wrch(escape) 
+       wrch($H)				// home
+       wrch(escape)
+       wrch($v)				// clear page
+       Wait(500)				// give .5sec to recover screen
+       wrch(escape)
+       wrch($3)				// set forground
+       endcase
+       }
+    }
+ screenPosition(1,1); wrch($[); wrch($])
+ }
+
+
+let notranslate() be
+{
+ let v := vec 20
+ v|1 := OUTPUT
+ JSYS(jsRFMOD,v)			// get the current mode
+ v|2 := v|2 & #777777777477		// trans. off; echo on
+ JSYS(jsSFMOD,v)			// clear the trans mode bits
+ }
+
+let openConsole() be
+{
+
+ GetTtyType()
+ notranslate()				// turn off character translation
+
+
+ let crt := TTYtype
+ if crt eq 3 do				// init page for aaa simulation
+    {
+    wrch(escape)
+    wrch(sqrbrkt)
+    wrch($1)				// edit in line
+    wrch($Q)
+    
+    wrch(escape)
+    wrch(sqrbrkt)			// set display params
+    wrch($3)				// page size
+    wrch($0)
+    wrch($;)				// upper host area=0
+    wrch($;)				// lower host
+    wrch($;)
+    wrch($3)				// screen size
+    wrch($0)
+    wrch($p)
+    }
+ }
+
+
+
+
+
+let display(x,y,strng) be		// for the telebag
+{
+
+ 
+ let tsize := q4 strng|0
+ screenPosition(x,y)
+ for i := 1 to tsize do
+    { wrch($*s) }
+ screenPosition(x,y)			//   for the form stuff
+ WriteS(strng)
+ }
+
+
+let NewLine(jfn) be
+{
+ WriteS(jfn,"*c*l")
+}
+
+
+let WriteO(jfn,num) be		
+{
+ WriteOct(jfn,num)
+}
+
+
+let WriteFL(jfn,f1) be
+{
+ let acs := vec 10
+ let cnt := 0
+ let tmp2 := vec 20
+ let tmp3 := vec 20
+ acs|1 := POINT(7,tmp2)
+ acs|2 := f1
+ acs|3 := #164037070200		// b2,3 left justify,using trlng spaces
+// acs|3 := #024037070700		// b2,3 left justify,using trlng spaces
+					// b4 at least 1 dig in fld 1
+					// b6 output dec pt
+					// b13-17 do not round
+					// b21-23 7 digit max in first fld
+					// b28 2 chars in fld 2
+
+cnt := JSYS(jsFLOUT,acs)
+ASCIZToString(POINT(7,tmp2),tmp3)
+WriteS(jfn,tmp3)
+return
+}
+
+let ReadF(jfn) := valof
+{
+ let acs := vec 10
+ acs|1 := jfn
+ let cnt := JSYS(jsFLIN,acs)
+ if cnt = 1 then
+   { Abort(" flin jsys failed in readf ")
+     }
+  resultis acs|2
+ }
+
+
+let readLine(vbuff,qline,qcol,dtype,dsize,sizedesc,hlptxt) be
+{
+ 
+/*    This is the major tty interface.  The above params to the
+ *    routine are;
+ *    vbuff:      buffer to return the input
+ *    qline:      display line (y)
+ *    qcol:       and column (x)
+ *    dtype:      expected data type on input (char,string,number=integer)
+ *                f=float, i=integer, s=ssan, default=string/char
+ *    dsize:      either max, or abs size of input as described by:
+ *    sizedesc:   this descriptor
+ *    hlptxt:     help string
+ */
+
+ flashField(qline,qcol,dsize)
+ screenPosition( qline,qcol ) 
+
+ let ch := nil;				// The character read in.
+ let ptr := vbuff|0			// A pointer into the buffer
+ let crt := TTYtype
+ let rubchar := #40
+ let conx := #0
+
+ switchon crt into
+    {
+    case 2:				// t10
+       {
+       rubchar := #40
+       endcase
+       }
+    case 3:				// aaa
+       {
+       rubchar := $_
+       endcase
+       }
+    case 4:				// visual200
+       {
+       rubchar := $_
+       endcase
+       }
+    }
+
+
+ if (ptr > 0) then
+    { for i := 1 to ptr do wrch(vbuff|i) }
+
+ while (ptr le dsize) do			// input chars and load buffer
+    {
+    ch := PBIN()			// Pick up the next character
+    switchon ch into
+      {
+      case $*n:
+      case $*l:
+         {
+	 if (sizedesc = $a & ptr ne dsize) do
+	    {
+	    wrch(#07)	// bell
+	    display(22,1,"this field has absolute size: ")
+	    WriteN(dsize)
+	    screenPosition(qline,qcol)
+	    if ptr > 0 do
+	       { for i := 1 to ptr do wrch(vbuff|i) }
+	    endcase }
+	 break }
+
+      case $*c:
+         {
+	 if (sizedesc = $a & ptr ne dsize) do
+	    {
+	    wrch(#07)
+	    display(22,1,"this field has absolute size: ")
+	    WriteN(dsize)
+	    screenPosition(qline,qcol)
+	    if ptr > 0 do
+	       { for i := 1 to ptr do wrch(vbuff|i) }
+	    endcase }
+	  break }
+
+      case $*022:
+         {
+	 screenPosition(qline,qcol)	// ^R 
+	 for i := 1 to ptr do wrch( vbuff|i)  
+	 endcase }
+
+      case $*177:
+         {
+	 test ptr > 0 then	// rubout 
+	    {
+	    wrch( #10)	// backspace
+            wrch(rubchar)
+	    wrch( #10)	// then backup again
+	    ptr := ptr - 1
+	    }
+	 or { wrch(#07) }
+	 endcase }     
+
+      case $*025:
+         {
+	 test ptr > 0 then	// ^U
+	    {
+	    for i := 1 to ptr do
+	       {
+	       wrch( #10)
+	       wrch(rubchar)
+	       wrch( #10)
+	       }
+	    ptr :=0
+	    }
+	 or { wrch(#07) }
+	 endcase  }
+
+      case $*?:
+         {
+	  display(21,1,hlptxt)
+	  screenPosition(qline,qcol)
+	  if ptr > 0 do
+	  { for i := 1 to ptr do wrch(vbuff|i) }
+	  endcase
+	  }
+
+      case $*014:  // ^L
+         {
+	 clearScreen() 
+	 flashField(qline,qcol,dsize)
+	 screenPosition(qline,qcol)
+	 if ptr > 0 do
+	    { for i := 1 to ptr do wrch(vbuff|i) }
+	 endcase }
+
+      case $*030:
+         {				// ^X for system use
+	 display(22,1,"*^X enter *^P for prev record, *^N for nxt record")
+	 display(23,1,"*^X_")
+	 ch := PBIN()
+	 switchon ch into
+	 {
+	  case $*020: { display(23,1,"*^X *^P .. prv record"); endcase }
+	  case $*016: { display(23,1,"*^X *^N .. nxt record"); endcase }
+	  default: { display(23,1,"*^X UNKnown"); endcase }
+	  }
+	 screenPosition(qline,qcol)
+	 for i := 1 to ptr do PBOUT(vbuff|i) 
+	 endcase
+	 }
+      case $*000 to $*011:
+      case $*013:
+      case $*016 to $*021:
+      case $*023 to $*024:
+      case $*026 to $*027:
+      case $*031 to $*033:
+         {
+            display(22,1,"only rubout, c- L,U,R,M,J,X are implememted ")
+	    wrch(#07)
+	    screenPosition(qline,qcol)
+	    for i := 1 to ptr do wrch(vbuff|i) 
+	    endcase
+	    }
+
+      default:
+         {
+	 if ptr=dsize do
+	    {
+	    display(22,1,"? max size reached, either confirm or edit field")
+	    wrch(#07)
+	    screenPosition(qline,qcol+ptr)
+	    endcase }
+
+	 switchon dtype into
+	    {
+	    case $d:			// numeric date, sep by dash
+	       {
+	       if ($9 < ch logor ch < $0) do
+	          {
+		  display(22,1,"? error, number only")
+		  wrch(#07)
+		  screenPosition(qline,qcol)
+		  if ptr > 0 do
+		     { for i := 1 to ptr do wrch(vbuff|i) }
+		  endcase
+		  }
+	       ptr := ptr + 1
+	       vbuff|ptr := ch
+	       wrch(ch)
+	       if ptr=2\ptr=5 then
+	          {
+		  ptr :=  ptr+1
+		  vbuff|ptr := #55	// - , dash
+		  wrch(#55)
+		  }
+	       endcase }
+	    case $i:			// integer (positive or zero only)
+	       {
+	       if ($9 < ch logor ch < $0) do
+	          {
+		  display(22,1,"? error, number only")
+		  wrch(#07)
+		  screenPosition(qline,qcol)
+		  if ptr > 0 do
+		     { for i := 1 to ptr do wrch(vbuff|i) }
+		  endcase }
+	       ptr := ptr + 1
+	       vbuff|ptr := ch
+	       wrch(ch)
+	       endcase }
+
+	    case $s:			// integer (positive or zero only)
+	       {
+	       if ($9 < ch logor ch < $0) do
+	          {
+		  display(22,1,"? error, number only")
+		  wrch(#07)
+		  screenPosition(qline,qcol)
+		  if ptr > 0 do
+		     { for i := 1 to ptr do wrch(vbuff|i) }
+		  endcase
+		  }
+	       ptr := ptr + 1
+	       vbuff|ptr := ch
+	       wrch(ch)
+	       if ptr=3\ptr=6 then
+	          {
+		  ptr :=  ptr+1
+		  vbuff|ptr := #55	// - , dash
+		  wrch(#55)
+		  }
+	       endcase }
+
+	    case $f:			// float (pos or zero only)
+	       {
+	       switchon ch into
+	          {
+		  case $0 to $9:
+		     {
+		     ptr := ptr + 1
+		     vbuff|ptr := ch
+		     wrch(ch)
+		     endcase }
+
+		  case $.:
+		     {
+		     if ptr > 0 do
+		        {
+			for i := 1 to ptr do
+			   {
+			   if vbuff|i = $. do
+			      {
+			      display(22,1,"? 1 dec pt only")
+			      wrch(#07)
+			      screenPosition(qline,qcol)
+			      for i := 1 to ptr do wrch(vbuff|i) 
+			      endcase }
+			   }
+			}
+		     ptr := ptr + 1
+		     vbuff|ptr := ch
+		     wrch(ch)
+		     endcase }
+
+		  default:
+		     {
+		     display(22,1,"? floating pt number only")
+		     wrch(#07)
+		     screenPosition(qline,qcol)
+		     if ptr > 0 do
+		        { for i := 1 to ptr do wrch(vbuff|i) }
+		     endcase }
+		  }
+	       endcase }		// end case f:
+
+	    default:
+	       {			// def for switchon dtype
+	       ptr := ptr + 1;	//  load in the char
+	       vbuff ! ptr := ch
+	       wrch( ch)
+	       endcase }
+	    }				// end dtype
+	 endcase
+	 }			// end swithcon def
+      }					// end switchon main
+    }					// end while
+  unflashField(qline,qcol,dsize,ptr)
+  vbuff|0 := ptr
+  return
+  }					// end readline
+
